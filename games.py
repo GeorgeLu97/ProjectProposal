@@ -164,6 +164,13 @@ class MafiaEnv():
         # and bool on if it is terminal state
         # return np.array(self.state), reward, done, {}
 
+    def getstate(self, agent):
+        # bad
+        if self.bpb[agent]:
+
+        #good
+        else:
+            result = np.zeros(shape=(self.maxturns,self.playercount,self.playercount))
 
     def reset(self):
         self.badplayers = np.random.permutation(self.playercount)[:self.badplayercount]
