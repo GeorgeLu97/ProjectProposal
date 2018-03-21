@@ -162,6 +162,88 @@ class QNetwork():
         # Helper function to load model weights.
         self.model.load_weights(weight_file)
 
+class PNetwork():
+
+    def __init__(self, env, agent, deep=0):
+        # Define your network architecture here. It is also a good idea to define any training operations
+        # and optimizers here, initialize your variables, or alternately compile your model here.
+
+        self.model = None
+        self.agent = agent
+
+        self.state_size = env.observation_space.low.size
+        self.action_size = env.action_space.n
+
+        model = Sequential()
+        model.add(Dense(10, activation='relu', input_dim=(self.state_size)))
+        model.add(Dense(10, activation='relu'))
+        model.add(Dense(10, activation='relu'))
+        model.add(Dense(self.action_size, activation='relu'))
+        model.add(Dense(1, activation='softmax'))
+
+        adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+        model.compile(loss='categorical_crossentropy',
+                      optimizer=adam,
+                      metrics=['accuracy'])
+        self.model = model
+
+    # states : np.array (num_inputs, num_dims)
+    # return : np.array (num_inputs, num_actions)
+    def predict(self, states):
+        return self.model.predict(states)
+
+    # states : np.array (num_inputs, num_dims)
+    # return best_action : (num_inputs, )
+    # return best_action_value : (num_inputs, )
+    def best_action_batch(self, states, terminals=None):
+        next_state_actions = self.predict(states)
+        best_actions = np.argmax(next_state_actions, axis=1)
+        best_action_value = np.max(next_state_actions, axis=1)
+        if terminals is not None:
+            best_action_value[terminals] = 0.0
+        return (best_actions, best_action_value)
+
+    def best_action(self, state):
+        actions, action_value = self.best_action_batch(np.array([state]))
+        return (actions[0], action_value[0])
+
+    def update_batch(self, size, experienceList):
+        target_list = []
+        cur_list = []
+
+        next_states = np.array([experience[3] for experience in experienceList])
+        rewards = np.array([experience[2] for experience in experienceList])
+        states = np.array([experience[0] for experience in experienceList])
+        actions = np.array([experience[1] for experience in experienceList])
+        terminals = np.array([experience[4] for experience in experienceList])
+
+        _, next_state_values = self.best_action_batch(next_states, terminals)
+        new_targets = rewards + (self.agent.gamma * next_state_values)
+        cur_targets = self.predict(states)
+
+        # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
+        cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
+
+        if self.deep != 0:
+            states = np.append(states, np.ones((states.shape[0], 1)), axis=1)
+        self.model.fit(states, cur_targets, batch_size=size, verbose=0)
+
+    def update(self, state, action, reward, next_state, is_terminal):
+        self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
+
+    def save_model_weights(self, weight_file):
+        # Helper function to save your model / weights.
+        self.model.save_weights(weight_file)
+        pass
+
+    def load_model(self, model_file):
+        # Helper function to load an existing model.
+        self.model = keras.models.load_model(model_file)
+
+    def load_model_weights(self, weight_file):
+        # Helper function to load model weights.
+        self.model.load_weights(weight_file)
+
 
 class Replay_Memory():
 
@@ -216,41 +298,74 @@ class DQN_Agent():
         self.epsilon_delta = (0.5 - 0.05) / 100000
         self.episodes = 1000000
 
+        self.eta = 0.5
+
         self.environment_name = environment_name
         self.deep = deep
 
         self.policynet = QNetwork(self.env, self, deep=deep)
         self.valuenet = QNetwork(self.env, self, deep = deep)
 
-        self.targetnet = valuenet
+        # make targetnet just part of valuenet
+        self.targetnet = self.valuenet # yeah i know this isn't what i want
 
-        # self.qnet.load_model_weights(weight_file='BestLinearNoReplay')
-        self.state_size = self.env.observation_space.low.size
-        self.action_size = self.env.action_space.n
+        self.replayRL = 1 # replay
+        self.replaySL = 1
 
-        if use_replay:
-            # ia = init_Agent(environment_name, self)
-            self.replay = Replay_Memory(self, burn_in=10000)
+        self.update_period = 1000
 
-        self.render = render
-        self.use_replay = use_replay
+        self.iteration = 0
+        if random.random() < self.eta:
+            self.brp = True
+            self.sigma = self.epsilon_greedy_policy
+        else:
+            self.brp = False
+            self.sigma = self.greedy_policy
 
     # q_values: State * Action -> Value
     def epsilon_greedy_policy(self, state):
         if random.random() < self.epsilon:
             return random.randint(0, self.action_size - 1)
-        return self.greedy_policy(state)
-
-    # epsilon greedy policy with custom epsilon
-    def epsilon_greedy_policy2(self, state, epsilon):
-        if random.random() < epsilon:
-            return random.randint(0, self.action_size - 1)
-        return self.greedy_policy(state)
+        else:
+            best_action, _ = self.valuenet.best_action(state)
+            return best_action
 
     # greedy policy
     def greedy_policy(self, state):
-        best_action, _ = self.qnet.best_action(state)
+        best_action, _ = self.policynet.best_action(state)
         return best_action
+
+    def resetepisode(self):
+        self.iteration = 0
+        if random.random() < self.eta:
+            self.brp = True
+            self.sigma = self.epsilon_greedy_policy
+        else:
+            self.brp = False
+            self.sigma = self.greedy_policy
+
+    def act(self):
+        self.action = self.sigma(self.state)
+        return self.action
+
+    def updatereplay(self, state, action, reward, next_state, done):
+        self.iteration += 1
+        self.state = next_state
+        self.replayRL.append([state, action, reward, next_state, done])
+        if self.brp:
+            self.replaySL.append([state, action, reward, next_state, done])
+
+        replayRLbatch = self.replayRL.sample(32)
+        replaySLbatch = self.replaySL.sample(32)
+
+        #should use crossentropy loss, softmax activation
+        self.policynet.update_batch(32, replaySLbatch)
+
+        #should use mse loss, just have # action_size results
+        self.valuenet.update_batch(32, replayRLbatch)
+        if self.iteration % self.update_period == 0:
+            self.valuenet.update_target()
+
 
     def train(self, episodes=5000):
         # In this function, we will train our network.
@@ -260,16 +375,43 @@ class DQN_Agent():
         # If you are using a replay memory, you should interact with environment here, and store these
         # transitions to memory, while also updating your model.
 
-        # Used for non experience replay mode
-        iteration = 0
-        update_queue = []
-
         testing_rewards = []
         max_weight = -200
 
         run_test = False
 
         for episode in range(episodes):
+            iteration = 0
+            self.env.reset()
+            if random.random() < self.eta:
+                sigma = self.epsilon_greedy_policy
+            else:
+                sigma = self.greedy_policy
+            while True:
+                iteration += 1
+
+                if iteration % 10000 == 0:
+                    run_test = True
+
+                state =
+
+                action = sigma(state)
+
+                next_state, reward, is_terminal, debug_info = self.env.step(action)
+                is_terminal_win = (False if self.environment_name == 'MountainCar' and
+                                            self.deep == 0 and next_state[0] < 0.5 else is_terminal)
+
+                if self.use_replay:
+                    REPLAY_BATCH = 16
+                    if iteration % REPLAY_BATCH == 0:
+                        batch = self.replay.sample_batch(32 * REPLAY_BATCH)
+                        self.qnet.update_batch(32, batch)
+                    self.replay.append([cur_state, action, reward, next_state, is_terminal_win])
+
+                cur_state = next_state
+
+                if is_terminal:
+                    break
 
 
         for episode in range(episodes):
@@ -298,12 +440,6 @@ class DQN_Agent():
                         batch = self.replay.sample_batch(32 * REPLAY_BATCH)
                         self.qnet.update_batch(32, batch)
                     self.replay.append([cur_state, action, reward, next_state, is_terminal_win])
-                else:
-                    if iteration % 32 == 0:
-                        self.qnet.update_batch(32, update_queue)
-                        update_queue = []
-                    else:
-                        update_queue.append([cur_state, action, reward, next_state, is_terminal_win])
 
                 cur_state = next_state
 
@@ -378,6 +514,201 @@ class DQN_Agent():
             cur_state = next_state
             if is_terminal:
                 break
+
+class DQN_Agent():
+
+    # In this class, we will implement functions to do the following.
+    # (1) Create an instance of the Q Network class.
+    # (2) Create a function that constructs a policy from the Q values predicted by the Q Network.
+    #   (a) Epsilon Greedy Policy.
+    #     (b) Greedy Policy.
+    # (3) Create a function to train the Q Network, by interacting with the environment.
+    # (4) Create a function to test the Q Network's performance on the environment.
+    # (5) Create a function for Experience Replay.
+
+    def __init__(self, environment_name, render=False, use_replay=False,
+                 deep=0, monitor=False):
+
+        # Create an instance of the network itself, as well as the memory.
+        # Here is also a good place to set environmental parameters,
+        # as well as training parameters - number of episodes / iterations, etc.
+
+        self.env = 5 # current environment
+
+        # true/false input to whether good or bad agent
+        self.agents = [DQN_Agent(self.env.bpb[i]) for i in range(self.env.playercount)]
+
+        self.replay = Replay_Memory(self, burn_in=10000)
+
+        self.render = render
+        self.use_replay = use_replay
+
+    # q_values: State * Action -> Value
+    def epsilon_greedy_policy(self, state):
+        if random.random() < self.epsilon:
+            return random.randint(0, self.action_size - 1)
+        else:
+            best_action, _ = self.valuenet.best_action(state)
+            return best_action
+
+    # greedy policy
+    def greedy_policy(self, state):
+        best_action, _ = self.policynet.best_action(state)
+        return best_action
+
+    def resetepisode(self):
+
+    def act(self, state):
+
+
+    def train(self, episodes=5000):
+        # In this function, we will train our network.
+        # If training without experience replay_memory, then you will interact with the environment
+        # in this function, while also updating your network parameters.
+
+        # If you are using a replay memory, you should interact with environment here, and store these
+        # transitions to memory, while also updating your model.
+
+        testing_rewards = []
+        max_weight = -200
+
+        run_test = False
+
+        for episode in range(episodes):
+            iteration = 0
+            self.env.reset()
+            if random.random() < self.eta:
+                sigma = self.epsilon_greedy_policy
+            else:
+                sigma = self.greedy_policy
+            while True:
+                iteration += 1
+
+                if iteration % 10000 == 0:
+                    run_test = True
+
+                state =
+
+                action = sigma(state)
+
+                next_state, reward, is_terminal, debug_info = self.env.step(action)
+                is_terminal_win = (False if self.environment_name == 'MountainCar' and
+                                            self.deep == 0 and next_state[0] < 0.5 else is_terminal)
+
+                if self.use_replay:
+                    REPLAY_BATCH = 16
+                    if iteration % REPLAY_BATCH == 0:
+                        batch = self.replay.sample_batch(32 * REPLAY_BATCH)
+                        self.qnet.update_batch(32, batch)
+                    self.replay.append([cur_state, action, reward, next_state, is_terminal_win])
+
+                cur_state = next_state
+
+                if is_terminal:
+                    break
+
+
+        for episode in range(episodes):
+            cur_state = self.env.reset()
+
+            while True:
+                iteration += 1
+
+                if iteration % 10000 == 0:
+                    run_test = True
+
+                self.epsilon -= self.epsilon_delta
+                self.epsilon = max(self.epsilon, self.epsilon_target)
+                if self.render:
+                    self.env.render()
+                    time.sleep(0.05)
+
+                action = self.epsilon_greedy_policy(cur_state)
+                next_state, reward, is_terminal, debug_info = self.env.step(action)
+                is_terminal_win = (False if self.environment_name == 'MountainCar' and
+                                            self.deep == 0 and next_state[0] < 0.5 else is_terminal)
+
+                if self.use_replay:
+                    REPLAY_BATCH = 16
+                    if iteration % REPLAY_BATCH == 0:
+                        batch = self.replay.sample_batch(32 * REPLAY_BATCH)
+                        self.qnet.update_batch(32, batch)
+                    self.replay.append([cur_state, action, reward, next_state, is_terminal_win])
+
+                cur_state = next_state
+
+                if is_terminal:
+                    break
+
+            if run_test:
+                print(str(episode / 100) + ";" + str(iteration))
+                _, average_reward, _ = self.test(20, self.epsilon_target)
+                testing_rewards.append(average_reward)
+                run_test = False
+                if (average_reward > max_weight + 1):
+                    self.qnet.save_model_weights("model" + str(episode / 10000) + "wt" + str(average_reward))
+                    max_weight = average_reward
+            if (episode % 1000 == 0):
+                print(testing_rewards)
+                _, average_reward, _ = self.test(20, self.epsilon_target)
+                self.qnet.save_model_weights("modelfinal" + str(self.deep) + ";" +
+                                             str(episode / 10000) + ";" + str(average_reward))
+
+        _, avg, _ = self.test(100)
+        return avg
+
+    def test(self, episodes, epsilon=0.0, model_file=None):
+        total = []
+        reward_sum = 0.0
+        for i in range(episodes):
+            cur_state = self.env.reset()
+
+            episode_reward = 0
+            discount = 1
+            while True:
+                if self.render:
+                    self.env.render()
+                    time.sleep(0.05)
+
+                action = self.epsilon_greedy_policy2(cur_state, epsilon)
+                next_state, reward, is_terminal, debug_info = self.env.step(action)
+                # self.qnet.update(cur_state, action, reward, next_state, is_terminal)
+                cur_state = next_state
+
+                episode_reward += discount * reward
+                discount *= self.gamma
+                if is_terminal:
+                    break
+
+            total.append(episode_reward)
+            reward_sum += episode_reward
+
+        average = reward_sum / episodes
+        stddev = np.std(np.array(total))
+        print("Test: " + str(average))
+        return total, average, stddev
+
+    def burn_in_memory(self, cache, bns):
+        cur_state = self.env.reset()
+        # Initialize your replay memory with a burn_in number of episodes / transitions.
+        for i in range(0, bns):
+            action = self.epsilon_greedy_policy(cur_state)
+            next_state, reward, is_terminal, debug_info = self.env.step(action)
+
+            cache[i] = [cur_state, action, reward, next_state, is_terminal]
+            # self.qnet.update(cur_state, action, reward, next_state, is_terminal)
+            cur_state = next_state
+            if is_terminal:
+                cur_state = self.env.reset()
+
+        # need to episode to finish or else monitor complains
+        while True:
+            action = self.epsilon_greedy_policy(cur_state)
+            next_state, reward, is_terminal, debug_info = self.env.step(action)
+            cur_state = next_state
+            if is_terminal:
+                break
+
 
 
 def parse_arguments():

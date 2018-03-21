@@ -37,6 +37,12 @@ class MafiaEnv():
         self.daydeaths = []
         self.nightdeaths = []
 
+        # assemble state from votes + deaths
+        # teams have different agents trained
+
+        # inputs should also include role and agent index
+
+
     #day
     def step1(self, actionset):
         self.turn += 1
