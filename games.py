@@ -205,7 +205,7 @@ class ToyEnvironment():
         self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
 
         # is_mafia, alive, kill_matrix
-        self.state_size = self.player_count + self.player_count + (self.player_count * self.player_count)
+        self.state_size = self.player_count + self.player_count + self.player_count + (self.player_count * self.player_count)
         self.action_size = self.player_count + 1
 
     def get_villagers_alive(self):

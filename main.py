@@ -45,9 +45,9 @@ class QNetwork():
                       metrics=['accuracy'])
 
         model2 = Sequential()
-        model2.add(Dense(10, activation='relu', input_dim=(self.state_size)))
-        model2.add(Dense(10, activation='relu'))
-        model2.add(Dense(10, activation='relu'))
+        model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        model2.add(Dense(30, activation='relu'))
+        model2.add(Dense(30, activation='relu'))
         model2.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
@@ -135,8 +135,7 @@ class PNetwork():
         model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
         model.add(Dense(30, activation='relu'))
         model.add(Dense(30, activation='relu'))
-        model.add(Dense(self.action_size, activation='relu'))
-        model.add(Dense(1, activation='softmax'))
+        model.add(Dense(self.action_size, activation='softmax'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
         model.compile(loss='categorical_crossentropy',
@@ -153,7 +152,17 @@ class PNetwork():
     # return best_action : (num_inputs, )
     # return best_action_value : (num_inputs, )
     def best_action_batch(self, states):
-        return self.predict(states)
+        batch = self.predict(states)
+        newbatch = []
+        for i in batch:
+            k = random.random()
+            for j in range(len(i)):
+                if i[j] > k:
+                    newbatch.append(j)
+                    break
+                else:
+                    k -= i[j]
+        return newbatch
 
     def best_action(self, state):
         return self.best_action_batch(np.array([state]))[0]
@@ -250,6 +259,8 @@ class DQN_Agent():
         self.epsilon_delta = (0.5 - 0.05) / 100000
         self.episodes = 1000000
         self.env = game.env
+        self.state_size = self.env.state_size
+        self.action_size = self.env.action_size
         self.eta = 0.5
 
         self.deep = deep
@@ -277,7 +288,8 @@ class DQN_Agent():
     # q_values: State * Action -> Value
     def epsilon_greedy_policy(self, state):
         if random.random() < self.epsilon:
-            return random.randint(0, self.action_size - 1)
+            action = random.randint(0, self.action_size - 1)
+            return action
         else:
             best_action, _ = self.valuenet.best_action(state)
             return best_action
@@ -379,6 +391,7 @@ class DQN_Game():
         # Initialize your replay memory with a burn_in number of episodes / transitions.
         for i in range(0, bns):
             actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+            # print(actionset)
             next_state, rewards, is_terminal = self.env.step(actionset)
 
             [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
