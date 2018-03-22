@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-
+"""
 class MafiaEnv():
 
 
@@ -188,6 +188,7 @@ class MafiaEnv():
         self.daydeaths = []
         self.nightdeaths = []
         self.turn = 0
+"""
 
 class ToyEnvironment():
     ABSTAIN = 5
@@ -219,7 +220,7 @@ class ToyEnvironment():
         roles = self.is_mafia
         alive = self.alive
         for i in range(len(roles)):
-            if roles[i] == 0 and alive[i] == 1:
+            if roles[i] == 1 and alive[i] == 1:
                 return True
         return False
 
@@ -251,10 +252,14 @@ class ToyEnvironment():
         return new_state, reward, terminal
 
     def get_state(self, agent):
-        is_mafia_portion = self.is_mafia if self.is_mafia[agent] else [0 for _ in range(self.playercount)]
+        own_position_portion = [1 if agent == i else 0 for i in range(self.player_count)]
+        is_mafia_portion = self.is_mafia if self.is_mafia[agent] else [0 for _ in range(self.player_count)]
 
-        return (np.array([is_mafia_portion, self.alive, self.kill_matrix]).flatten())
+        flat_kill_matrix = sum(self.kill_matrix, [])
+        state = own_position_portion + is_mafia_portion + self.alive + flat_kill_matrix
 
+        state = np.array(state)
+        return state
 
     def reset(self):
         self.mafia = np.random.permutation(self.player_count)[:self.mafia_count]
@@ -266,5 +271,3 @@ class ToyEnvironment():
         self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
 
         return [self.get_state(i) for i in range(self.player_count)]
-
-
