@@ -25,7 +25,8 @@ class QNetwork():
 
     def __init__(self, env, agent, deep=0):
 
-        self.model = None
+        self.modeltrain = None
+        self.modeltarget = None
         self.agent = agent
 
         self.state_size = env.state_size
@@ -42,19 +43,25 @@ class QNetwork():
         model.compile(loss='mse',
                       optimizer=adam,
                       metrics=['accuracy'])
-        self.model = model
 
-    # states : np.array (num_inputs, num_dims)
-    # return : np.array (num_inputs, num_actions)
+        model2 = Sequential()
+        model2.add(Dense(10, activation='relu', input_dim=(self.state_size)))
+        model2.add(Dense(10, activation='relu'))
+        model2.add(Dense(10, activation='relu'))
+        model2.add(Dense(self.action_size, activation='relu'))
+
+        adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+        model2.compile(loss='mse',
+                      optimizer=adam,
+                      metrics=['accuracy'])
+
+        self.modeltrain = model
+        self.modeltarget = model2
+
+
+    # uses train
     def predict(self, states):
-        # We realized that keras automatically includes a bias term unless use_bias=False
-        # is specified. However, to keep compatibility with our trained models, we are leaving this
-        # in for the deep network models
-        if self.deep != 0:
-            bias_term = np.ones((states.shape[0], 1))
-            states = np.append(states, bias_term, axis=1)
-
-        return self.model.predict(states)
+        return self.modeltarget.predict(states)
 
     # states : np.array (num_inputs, num_dims)
     # return best_action : (num_inputs, )
@@ -88,25 +95,29 @@ class QNetwork():
         # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
         cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
 
-        if self.deep != 0:
-            states = np.append(states, np.ones((states.shape[0], 1)), axis=1)
-        self.model.fit(states, cur_targets, batch_size=size, verbose=0)
+        self.modeltrain.fit(states, cur_targets, batch_size=size, verbose=0)
 
     def update(self, state, action, reward, next_state, is_terminal):
         self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
 
-    def save_model_weights(self, weight_file):
+    def update_target(self):
+        self.modeltarget.set_weights(self.modeltrain.get_weights)
+
+    def save_model_weights(self, weight_file1, weight_file2):
         # Helper function to save your model / weights.
-        self.model.save_weights(weight_file)
+        self.modeltrain.save_weights(weight_file1)
+        self.modeltarget.save_weights(weight_file2)
         pass
 
-    def load_model(self, model_file):
+    def load_model(self, model_file1, model_file2):
         # Helper function to load an existing model.
-        self.model = keras.models.load_model(model_file)
+        self.modeltrain = keras.models.load_model(model_file1)
+        self.modeltarget = keras.models.load_model(model_file2)
 
-    def load_model_weights(self, weight_file):
+    def load_model_weights(self, weight_file1, weight_file2):
         # Helper function to load model weights.
-        self.model.load_weights(weight_file)
+        self.modeltrain.load_weights(weight_file1)
+        self.modeltarget.load_weights(weight_file2)
 
 class PNetwork():
 
@@ -117,8 +128,8 @@ class PNetwork():
         self.model = None
         self.agent = agent
 
-        self.state_size = env.observation_space.low.size
-        self.action_size = env.action_space.n
+        self.state_size = env.state_size
+        self.action_size = env.action_size
 
         model = Sequential()
         model.add(Dense(10, activation='relu', input_dim=(self.state_size)))
@@ -226,7 +237,7 @@ class DQN_Agent():
     # (4) Create a function to test the Q Network's performance on the environment.
     # (5) Create a function for Experience Replay.
 
-    def __init__(self, idx, game, render=False, use_replay=False,
+    def __init__(self, game, render=False, use_replay=False,
                  deep=0, monitor=False):
 
         # Create an instance of the network itself, as well as the memory.
@@ -238,19 +249,16 @@ class DQN_Agent():
         self.epsilon_target = 0.05
         self.epsilon_delta = (0.5 - 0.05) / 100000
         self.episodes = 1000000
-
+        self.env = game.env
         self.eta = 0.5
 
         self.deep = deep
 
-        self.policynet = QNetwork(self.env, self, deep=deep)
-        self.valuenet = PNetwork(self.env, self, deep = deep)
+        self.policynet = PNetwork(self.env, self, deep=deep)
+        self.valuenet = QNetwork(self.env, self, deep = deep)
 
         # make targetnet just part of valuenet
         self.targetnet = self.valuenet # yeah i know this isn't what i want
-
-        self.replayRL = Replay_Memory(game, kind=CBUFFER)
-        self.replaySL = Replay_Memory(game, kind=RESERVOIR)
 
         self.update_period = 1000
 
@@ -261,6 +269,10 @@ class DQN_Agent():
         else:
             self.brp = False
             self.sigma = self.greedy_policy
+
+    def init_replay(self, game):
+        self.replayRL = Replay_Memory(game, kind=CBUFFER)
+        self.replaySL = Replay_Memory(game, kind=RESERVOIR)
 
     # q_values: State * Action -> Value
     def epsilon_greedy_policy(self, state):
@@ -311,7 +323,7 @@ class DQN_Agent():
             self.valuenet.update_target()
 
     def appendreplay(self, state, action, reward, next_state, done):
-        self.replayRL.appen([state, action, reward, next_state, done])
+        self.replayRL.append([state, action, reward, next_state, done])
         if self.brp:
             self.replaySL.append([state, action])
 
@@ -330,33 +342,19 @@ class DQN_Game():
     def __init__(self, environment_name, render=False, use_replay=False,
                  deep=0, monitor=False):
 
-        # Create an instance of the network itself, as well as the memory.
-        # Here is also a good place to set environmental parameters,
-        # as well as training parameters - number of episodes / iterations, etc.
-
-        self.env = games.MafiaEnv() # current environment
+        self.env = games.ToyEnvironment() # current environment
 
         # true/false input to whether good or bad agent
-        self.agents = [DQN_Agent(self.env.bpb[i], self) for i in range(self.env.playercount)]
-
-        self.replay = Replay_Memory(self, burn_in=10000)
+        self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
 
         self.render = render
         self.use_replay = use_replay
-
+        [i.init_replay(self) for i in self.agents]
 
     def train(self, episodes=5000):
-        # In this function, we will train our network.
-        # If training without experience replay_memory, then you will interact with the environment
-        # in this function, while also updating your network parameters.
-
-        # If you are using a replay memory, you should interact with environment here, and store these
-        # transitions to memory, while also updating your model.
-
         testing_rewards = []
 
         run_test = False
-
         for episode in range(episodes):
             [i.resetepisode() for i in self.agents]
             iteration = 0
@@ -399,7 +397,7 @@ class DQN_Game():
                 break
 
 
-
+'''
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Deep Q Network Argument Parser')
     parser.add_argument('--env', dest='env', type=str, default='MountainCar')
@@ -410,24 +408,13 @@ def parse_arguments():
     parser.add_argument('--model', dest='model_file', type=str)
     parser.add_argument('--monitor', dest='monitor', type=int, default=0)
     return parser.parse_args()
-
+'''
 
 def main(args):
+    '''
     args = parse_arguments()
     environment_name = args.env
-
-    try:
-        # Setting the session to allow growth, so it doesn't allocate all GPU memory.
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-        gpu_ops = tf.GPUOptions(allow_growth=True)
-        config = tf.ConfigProto(gpu_options=gpu_ops)
-        sess = tf.Session(config=config)
-
-        # Setting this as the default tensorflow session.
-        keras.backend.tensorflow_backend.set_session(sess)
-    except NameError:
-        pass
+    '''
 
     '''
     if environment_name == 'MountainCar':
@@ -448,11 +435,11 @@ def main(args):
         agent.train(100000)
     '''
 
-    agent = DQN_Agent('MountainCar', deep=2)
-    agent.qnet.load_model_weights('BestDueling')
-    _, avg, stddev = agent.test(100, agent.epsilon_target)
-    print("avg + std")
-    print((avg, stddev))
+    agent = DQN_Game('MountainCar')
+    agent.train(1000)
+    # _, avg, stddev = agent.test(100, agent.epsilon_target)
+    #print("avg + std")
+    # print((avg, stddev))
 
 
 if __name__ == '__main__':
