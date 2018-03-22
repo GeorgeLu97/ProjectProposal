@@ -13,6 +13,7 @@ from keras.engine.topology import Layer
 
 import random
 import time
+import games
 
 DUEL = 2
 DEEP = 1
@@ -22,40 +23,20 @@ CBUFFER = 1
 
 class QNetwork():
 
-    # This class essentially defines the network architecture.
-    # The network should take in state of the world as an input,
-    # and output Q values of the actions available to the agent as the output.
-
     def __init__(self, env, agent, deep=0):
-        # Define your network architecture here. It is also a good idea to define any training operations
-        # and optimizers here, initialize your variables, or alternately compile your model here.
-
-        """
-        self.board = keras.callbacks.TensorBoard(log_dir='./logs', histogram_freq=0,
-            batch_size=32, write_graph=True, write_grads=False, write_images=False,
-            embeddings_freq=0, embeddings_layer_names=None, embeddings_metadata=None)
-        """
 
         self.model = None
         self.agent = agent
 
-        self.state_size = env.observation_space.low.size
-        self.action_size = env.action_space.n
+        self.state_size = env.state_size
+        self.action_size = env.action_size
 
-        self.deep = deep
-
-        def regularizer(x):
-            x -= keras.backend.mean(x, axis=1, keepdims=True)  # action column
-            return x
-
-        def regdim(xs):
-            return xs
 
         model = Sequential()
-        model.add(Dense(30, activation='relu', input_dim=(self.state_size + 1)))
+        model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
         model.add(Dense(30, activation='relu'))
         model.add(Dense(30, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
+        model.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
         model.compile(loss='mse',
@@ -194,7 +175,7 @@ class PNetwork():
 
 class Replay_Memory():
 
-    def __init__(self, agent, memory_size=50000, burn_in=10000, kind = CBUFFER):
+    def __init__(self, game, memory_size=50000, burn_in=10000, kind = CBUFFER):
         self.cache = [None for i in range(memory_size)]
         self.size = burn_in
         self.new = burn_in
@@ -208,7 +189,7 @@ class Replay_Memory():
         # A simple (if not the most efficient) was to implement the memory is as a list of transitions.
 
         # initialize burn in
-        agent.burn_in_memory(self.cache, burn_in)
+        game.burn_in_memory(self.cache, burn_in)
 
     def sample_batch(self, batch_size=32):
         # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
@@ -245,7 +226,7 @@ class DQN_Agent():
     # (4) Create a function to test the Q Network's performance on the environment.
     # (5) Create a function for Experience Replay.
 
-    def __init__(self, environment_name, render=False, use_replay=False,
+    def __init__(self, idx, game, render=False, use_replay=False,
                  deep=0, monitor=False):
 
         # Create an instance of the network itself, as well as the memory.
@@ -260,7 +241,6 @@ class DQN_Agent():
 
         self.eta = 0.5
 
-        self.environment_name = environment_name
         self.deep = deep
 
         self.policynet = QNetwork(self.env, self, deep=deep)
@@ -269,8 +249,8 @@ class DQN_Agent():
         # make targetnet just part of valuenet
         self.targetnet = self.valuenet # yeah i know this isn't what i want
 
-        self.replayRL = Replay_Memory(kind=CBUFFER)
-        self.replaySL = Replay_Memory(kind=RESERVOIR)
+        self.replayRL = Replay_Memory(game, kind=CBUFFER)
+        self.replaySL = Replay_Memory(game, kind=RESERVOIR)
 
         self.update_period = 1000
 
@@ -330,27 +310,11 @@ class DQN_Agent():
         if self.iteration % self.update_period == 0:
             self.valuenet.update_target()
 
+    def appendreplay(self, state, action, reward, next_state, done):
+        self.replayRL.appen([state, action, reward, next_state, done])
+        if self.brp:
+            self.replaySL.append([state, action])
 
-    def burn_in_memory(self, cache, bns):
-        cur_state = self.env.reset()
-        # Initialize your replay memory with a burn_in number of episodes / transitions.
-        for i in range(0, bns):
-            action = self.epsilon_greedy_policy(cur_state)
-            next_state, reward, is_terminal, debug_info = self.env.step(action)
-
-            cache[i] = [cur_state, action, reward, next_state, is_terminal]
-            # self.qnet.update(cur_state, action, reward, next_state, is_terminal)
-            cur_state = next_state
-            if is_terminal:
-                cur_state = self.env.reset()
-
-        # need to episode to finish or else monitor complains
-        while True:
-            action = self.epsilon_greedy_policy(cur_state)
-            next_state, reward, is_terminal, debug_info = self.env.step(action)
-            cur_state = next_state
-            if is_terminal:
-                break
 
 class DQN_Game():
 
@@ -370,10 +334,10 @@ class DQN_Game():
         # Here is also a good place to set environmental parameters,
         # as well as training parameters - number of episodes / iterations, etc.
 
-        self.env = 5 # current environment
+        self.env = games.MafiaEnv() # current environment
 
         # true/false input to whether good or bad agent
-        self.agents = [DQN_Agent(self.env.bpb[i]) for i in range(self.env.playercount)]
+        self.agents = [DQN_Agent(self.env.bpb[i], self) for i in range(self.env.playercount)]
 
         self.replay = Replay_Memory(self, burn_in=10000)
 
@@ -396,7 +360,7 @@ class DQN_Game():
         for episode in range(episodes):
             [i.resetepisode() for i in self.agents]
             iteration = 0
-            self.env.reset()
+            prevstates = self.env.reset()
 
             while True:
                 iteration += 1
@@ -404,12 +368,11 @@ class DQN_Game():
                 if iteration % 10000 == 0:
                     run_test = True
 
-                prevstates = [self.env.getstate(i) for i in range(len(self.agents))]
                 actions = [i.act() for i in self.agents]
-                result, reward, is_terminal = self.env.step1(actions)
-                [self.agents[i].updatereplay(prevstates[i], actions[i], reward[i], self.env.getstate(i), is_terminal)
+                results, reward, is_terminal = self.env.step1(actions)
+                [self.agents[i].updatereplay(prevstates[i], actions[i], reward[i], results[i], is_terminal)
                     for i in range(len(self.agents))]
-
+                prevstates = results
                 if is_terminal:
                     break
 
@@ -417,11 +380,12 @@ class DQN_Game():
         cur_state = self.env.reset()
         # Initialize your replay memory with a burn_in number of episodes / transitions.
         for i in range(0, bns):
-            action = self.epsilon_greedy_policy(cur_state)
-            next_state, reward, is_terminal, debug_info = self.env.step(action)
+            actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+            next_state, rewards, is_terminal = self.env.step(actionset)
 
-            cache[i] = [cur_state, action, reward, next_state, is_terminal]
-            # self.qnet.update(cur_state, action, reward, next_state, is_terminal)
+            [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+             for i in range(len(self.agents))]
+
             cur_state = next_state
             if is_terminal:
                 cur_state = self.env.reset()

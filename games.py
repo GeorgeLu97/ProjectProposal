@@ -167,7 +167,7 @@ class MafiaEnv():
     def getstate(self, agent):
         # bad
         if self.bpb[agent]:
-
+            pass
         #good
         else:
             result = np.zeros(shape=(self.maxturns,self.playercount,self.playercount))
