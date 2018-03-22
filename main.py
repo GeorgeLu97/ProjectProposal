@@ -34,9 +34,9 @@ class QNetwork():
 
 
         model = Sequential()
-        model.add(Dense(10, activation='relu', input_dim=(self.state_size)))
-        model.add(Dense(10, activation='relu'))
-        model.add(Dense(10, activation='relu'))
+        model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        model.add(Dense(30, activation='relu'))
+        model.add(Dense(30, activation='relu'))
         model.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
@@ -132,9 +132,9 @@ class PNetwork():
         self.action_size = env.action_size
 
         model = Sequential()
-        model.add(Dense(10, activation='relu', input_dim=(self.state_size)))
-        model.add(Dense(10, activation='relu'))
-        model.add(Dense(10, activation='relu'))
+        model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        model.add(Dense(30, activation='relu'))
+        model.add(Dense(30, activation='relu'))
         model.add(Dense(self.action_size, activation='relu'))
         model.add(Dense(1, activation='softmax'))
 
