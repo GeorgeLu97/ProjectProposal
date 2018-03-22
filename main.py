@@ -160,38 +160,20 @@ class PNetwork():
     # states : np.array (num_inputs, num_dims)
     # return best_action : (num_inputs, )
     # return best_action_value : (num_inputs, )
-    def best_action_batch(self, states, terminals=None):
-        next_state_actions = self.predict(states)
-        best_actions = np.argmax(next_state_actions, axis=1)
-        best_action_value = np.max(next_state_actions, axis=1)
-        if terminals is not None:
-            best_action_value[terminals] = 0.0
-        return (best_actions, best_action_value)
+    def best_action_batch(self, states):
+        return self.predict(states)
 
     def best_action(self, state):
-        actions, action_value = self.best_action_batch(np.array([state]))
-        return (actions[0], action_value[0])
+        return self.best_action_batch(np.array([state]))[0]
 
     def update_batch(self, size, experienceList):
         target_list = []
         cur_list = []
 
-        next_states = np.array([experience[3] for experience in experienceList])
-        rewards = np.array([experience[2] for experience in experienceList])
         states = np.array([experience[0] for experience in experienceList])
         actions = np.array([experience[1] for experience in experienceList])
-        terminals = np.array([experience[4] for experience in experienceList])
 
-        _, next_state_values = self.best_action_batch(next_states, terminals)
-        new_targets = rewards + (self.agent.gamma * next_state_values)
-        cur_targets = self.predict(states)
-
-        # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
-        cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
-
-        if self.deep != 0:
-            states = np.append(states, np.ones((states.shape[0], 1)), axis=1)
-        self.model.fit(states, cur_targets, batch_size=size, verbose=0)
+        self.model.fit(states, actions, batch_size=size, verbose=0)
 
     def update(self, state, action, reward, next_state, is_terminal):
         self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
@@ -287,8 +269,8 @@ class DQN_Agent():
         # make targetnet just part of valuenet
         self.targetnet = self.valuenet # yeah i know this isn't what i want
 
-        self.replayRL = 1 # circular buffer
-        self.replaySL = 1 # reservoir
+        self.replayRL = Replay_Memory(kind=CBUFFER)
+        self.replaySL = Replay_Memory(kind=RESERVOIR)
 
         self.update_period = 1000
 
@@ -310,7 +292,7 @@ class DQN_Agent():
 
     # greedy policy
     def greedy_policy(self, state):
-        best_action, _ = self.policynet.best_action(state)
+        best_action = self.policynet.best_action(state)
         return best_action
 
     def resetepisode(self):
@@ -335,7 +317,7 @@ class DQN_Agent():
         self.state = next_state
         self.replayRL.append([state, action, reward, next_state, done])
         if self.brp:
-            self.replaySL.append([state, action, reward, next_state, done])
+            self.replaySL.append([state, action])
 
         replayRLbatch = self.replayRL.sample(32)
         replaySLbatch = self.replaySL.sample(32)
