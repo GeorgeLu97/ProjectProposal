@@ -197,8 +197,9 @@ class Replay_Memory():
 
     def __init__(self, game, memory_size=50000, burn_in=10000, kind = CBUFFER):
         self.cache = [None for i in range(memory_size)]
-        self.size = burn_in
-        self.new = burn_in
+        self.size = 0
+        self.new = 0
+        self.burn_in = burn_in
         self.cap = memory_size
         self.kind = kind
 
@@ -208,8 +209,6 @@ class Replay_Memory():
         # randomly initialized agent. Memory size is the maximum size after which old elements in the memory are replaced.
         # A simple (if not the most efficient) was to implement the memory is as a list of transitions.
 
-        # initialize burn in
-        game.burn_in_memory(self.cache, burn_in)
 
     def sample_batch(self, batch_size=32):
         # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
@@ -266,7 +265,7 @@ class DQN_Agent():
         self.deep = deep
 
         self.policynet = PNetwork(self.env, self, deep=deep)
-        self.valuenet = QNetwork(self.env, self, deep = deep)
+        self.valuenet = QNetwork(self.env, self, deep=deep)
 
         # make targetnet just part of valuenet
         self.targetnet = self.valuenet # yeah i know this isn't what i want
@@ -299,14 +298,18 @@ class DQN_Agent():
         best_action = self.policynet.best_action(state)
         return best_action
 
-    def resetepisode(self):
+    def resetepisode(self, testing=False):
         self.iteration = 0
-        if random.random() < self.eta:
-            self.brp = True
-            self.sigma = self.epsilon_greedy_policy
-        else:
+        if testing:
             self.brp = False
             self.sigma = self.greedy_policy
+        else:
+            if random.random() < self.eta:
+                self.brp = True
+                self.sigma = self.epsilon_greedy_policy
+            else:
+                self.brp = False
+                self.sigma = self.greedy_policy
 
     def act(self):
         action = self.sigma(self.state)
@@ -339,6 +342,12 @@ class DQN_Agent():
         if self.brp:
             self.replaySL.append([state, action])
 
+class RandomAgent():
+    def resetepisode(self, training=False):
+        pass
+
+    def act(self, state):
+        return random.randint(0, 5)
 
 class DQN_Game():
 
@@ -358,38 +367,85 @@ class DQN_Game():
 
         # true/false input to whether good or bad agent
         self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
-
         self.render = render
         self.use_replay = use_replay
         [i.init_replay(self) for i in self.agents]
 
-    def train(self, episodes=5000):
-        testing_rewards = []
+        self.burn_in_memory(self.agents[0].replayRL.burn_in)
+        print("Completed All Agent and Game Initialization")
 
+    def train(self, episodes=5000):
+        # Unused right now
+        testing_rewards = []
         run_test = False
+
+        cur_state = self.env.reset()
+        iteration = 0
+
         for episode in range(episodes):
             [i.resetepisode() for i in self.agents]
-            iteration = 0
             prevstates = self.env.reset()
 
             while True:
                 iteration += 1
 
-                if iteration % 10000 == 0:
+                if iteration % 1000 == 0:
                     run_test = True
 
-                actions = [i.act() for i in self.agents]
-                results, reward, is_terminal = self.env.step1(actions)
-                [self.agents[i].updatereplay(prevstates[i], actions[i], reward[i], results[i], is_terminal)
+                actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+                next_state, rewards, is_terminal = self.env.step(actionset)
+
+                [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
                     for i in range(len(self.agents))]
-                prevstates = results
+                cur_state = next_state
                 if is_terminal:
                     break
 
-    def burn_in_memory(self, cache, bns):
+            if run_test:
+                avg_score_differential = self.test()
+                testing_rewards.append(avg_score_differential)
+                run_test = False
+        print(testing_rewards)
+        print("completed training")
+
+    # For testing, we test set one team to be our trained agents and the other team to be random agents
+    def test(self):
+        total_ai_reward = 0
+        for episode in range(100):
+            cur_state = self.env.reset()
+            [i.resetepisode(testing=True) for i in self.agents]
+            mafia_list = self.env.is_mafia
+            random_ai = random.randint(0, 1)
+            agent_list = [None for _ in range(len(self.agents))]
+
+            for i in range(len(self.agents)):
+                if mafia_list[i] == random_ai:
+                    agent_list[i] = RandomAgent()
+                else:
+                    agent_list[i] = self.agents[i]
+
+            while True:
+                actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+                next_state, rewards, is_terminal = self.env.step(actionset)
+
+                [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+                    for i in range(len(self.agents))]
+                cur_state = next_state
+                if is_terminal:
+                    for i in range(len(self.agents)):
+                        if mafia_list[i] == random_ai:
+                            total_ai_reward += rewards[i]
+                            break
+                    break
+        return (total_ai_reward / 100)
+
+
+
+
+    def burn_in_memory(self, bns):
         cur_state = self.env.reset()
         # Initialize your replay memory with a burn_in number of episodes / transitions.
-        for i in range(0, bns):
+        for _ in range(0, bns):
             actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
             # print(actionset)
             next_state, rewards, is_terminal = self.env.step(actionset)
@@ -403,8 +459,13 @@ class DQN_Game():
 
         # need to episode to finish or else monitor complains
         while True:
-            action = self.epsilon_greedy_policy(cur_state)
-            next_state, reward, is_terminal, debug_info = self.env.step(action)
+            actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+            # print(actionset)
+            next_state, rewards, is_terminal = self.env.step(actionset)
+
+            [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+             for i in range(len(self.agents))]
+
             cur_state = next_state
             if is_terminal:
                 break
@@ -449,7 +510,7 @@ def main(args):
     '''
 
     agent = DQN_Game('MountainCar')
-    agent.train(1000)
+    agent.train(50000)
     # _, avg, stddev = agent.test(100, agent.epsilon_target)
     #print("avg + std")
     # print((avg, stddev))
