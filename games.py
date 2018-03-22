@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-
+"""
 class MafiaEnv():
 
 
@@ -188,3 +188,86 @@ class MafiaEnv():
         self.daydeaths = []
         self.nightdeaths = []
         self.turn = 0
+"""
+
+class ToyEnvironment():
+    ABSTAIN = 5
+
+    def __init__(self):
+        self.player_count = 5
+        self.mafia_count = 2
+        self.mafia = np.random.permutation(self.player_count)[:self.mafia_count]
+        self.is_mafia = [0 for _ in range(self.player_count)]
+        for i in self.mafia:
+            self.is_mafia[i] = 1
+
+        self.alive = [1 for _ in range(self.player_count)]
+        self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
+
+        # is_mafia, alive, kill_matrix
+        self.state_size = self.player_count + self.player_count + (self.player_count * self.player_count)
+        self.action_size = self.player_count + 1
+
+    def get_villagers_alive(self):
+        roles = self.is_mafia
+        alive = self.alive
+        for i in range(len(roles)):
+            if roles[i] == 0 and alive[i] == 1:
+                return True
+        return False
+
+    def get_mafia_alive(self):
+        roles = self.is_mafia
+        alive = self.alive
+        for i in range(len(roles)):
+            if roles[i] == 1 and alive[i] == 1:
+                return True
+        return False
+
+    def step(self, actionset): 
+        mark_dead = []
+        for i in range(len(actionset)):
+            if self.alive[i] == 1:
+                target = actionset[i]
+                if target == ToyEnvironment.ABSTAIN:
+                    continue
+                elif self.alive[target] == 1:
+                    mark_dead.append(target)
+                    self.kill_matrix[i][target] = 1
+        for dead in mark_dead:
+            self.alive[dead] = 0
+
+        terminal = False
+        reward = [0 for i in range(self.player_count)]
+        if not self.get_villagers_alive() and not self.get_mafia_alive():
+            terminal = True
+        elif not self.get_villagers_alive():
+            reward = [1 if self.is_mafia[i] else -1 for i in range(self.player_count)]
+            terminal = True
+        elif not self.get_mafia_alive():
+            reward = [-1 if self.is_mafia[i] else 1 for i in range(self.player_count)]
+            terminal = True
+
+        new_state = [self.get_state(i) for i in range(self.player_count)]
+        return new_state, reward, terminal
+
+    def get_state(self, agent):
+        own_position_portion = [1 if agent == i else 0 for i in range(self.player_count)]
+        is_mafia_portion = self.is_mafia if self.is_mafia[agent] else [0 for _ in range(self.player_count)]
+
+        flat_kill_matrix = sum(self.kill_matrix, [])
+        state = own_position_portion + is_mafia_portion + self.alive + flat_kill_matrix
+
+        state = np.array(state)
+        return state
+
+    def reset(self):
+        self.mafia = np.random.permutation(self.player_count)[:self.mafia_count]
+        self.is_mafia = [0 for _ in range(self.player_count)]
+        for i in self.mafia:
+            self.is_mafia[i] = 1
+
+        self.alive = [1 for _ in range(self.player_count)]
+        self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
+
+        return [self.get_state(i) for i in range(self.player_count)]
