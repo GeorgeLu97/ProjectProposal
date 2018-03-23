@@ -196,7 +196,8 @@ class ToyEnvironment():
     def __init__(self):
         self.player_count = 5
         self.mafia_count = 2
-        self.mafia = np.random.permutation(self.player_count)[:self.mafia_count]
+        self.permutation = np.random.permutation(self.player_count)
+        self.mafia = self.permutation[:self.mafia_count]
         self.is_mafia = [0 for _ in range(self.player_count)]
         for i in self.mafia:
             self.is_mafia[i] = 1

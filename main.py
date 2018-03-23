@@ -377,6 +377,9 @@ class DQN_Game():
     def train(self, episodes=5000):
         # Unused right now
         testing_rewards = []
+        townie_rewards = []
+        mafia_rewards = []
+
         run_test = False
 
         cur_state = self.env.reset()
@@ -402,15 +405,21 @@ class DQN_Game():
                     break
 
             if run_test:
-                avg_score_differential = self.test()
+                avg_score_differential, avg_score_townie, avg_score_mafia = self.test()
                 testing_rewards.append(avg_score_differential)
+                townie_rewards.append(avg_score_townie)
+                mafia_rewards.append(avg_score_mafia)
                 run_test = False
         print(testing_rewards)
+        print(townie_rewards)
+        print(mafia_rewards)
         print("completed training")
 
     # For testing, we test set one team to be our trained agents and the other team to be random agents
     def test(self):
         total_ai_reward = 0
+        ai_role_reward = [0, 0]
+        ai_role_count = [0, 0]
         for episode in range(100):
             cur_state = self.env.reset()
             [i.resetepisode(testing=True) for i in self.agents]
@@ -425,19 +434,21 @@ class DQN_Game():
                     agent_list[i] = self.agents[i]
 
             while True:
-                actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+                actionset = [agent_list[i].act(cur_state[i]) for i in range(len(self.agents))]
                 next_state, rewards, is_terminal = self.env.step(actionset)
 
-                [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
-                    for i in range(len(self.agents))]
                 cur_state = next_state
                 if is_terminal:
                     for i in range(len(self.agents)):
                         if mafia_list[i] == random_ai:
                             total_ai_reward += rewards[i]
+                            ai_role_count[random_ai] += 1
+                            ai_role_reward[random_ai] += rewards[i]
                             break
                     break
-        return (total_ai_reward / 100)
+        print("Townie: " + str(ai_role_reward[0] / ai_role_count[0]))
+        print("Mafia: " + str(ai_role_reward[1] / ai_role_count[1]))
+        return (total_ai_reward / 100, ai_role_reward[0] / ai_role_count[0], ai_role_reward[1] / ai_role_count[1])
 
 
 
@@ -510,7 +521,7 @@ def main(args):
     '''
 
     agent = DQN_Game('MountainCar')
-    agent.train(50000)
+    agent.train(60000)
     # _, avg, stddev = agent.test(100, agent.epsilon_target)
     #print("avg + std")
     # print((avg, stddev))
