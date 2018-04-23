@@ -34,10 +34,10 @@ class QNetwork():
 
 
         model = Sequential()
-        model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        #model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
         #model.add(Dense(30, activation='relu'))
         #model.add(Dense(30, activation='relu'))
-        model.add(Dense(self.action_size, activation='relu'))
+        model.add(Dense(self.action_size, activation='relu', input_dim=(self.state_size)))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
         model.compile(loss='mse',
@@ -45,10 +45,10 @@ class QNetwork():
                       metrics=['accuracy'])
 
         model2 = Sequential()
-        model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        #model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
         #model2.add(Dense(30, activation='relu'))
         #model2.add(Dense(30, activation='relu'))
-        model2.add(Dense(self.action_size, activation='relu'))
+        model2.add(Dense(self.action_size, activation='relu', input_dim=(self.state_size)))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
         model2.compile(loss='mse',
@@ -133,8 +133,8 @@ class PNetwork():
 
         model = Sequential()
         model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
-        model.add(Dense(30, activation='relu'))
-        model.add(Dense(30, activation='relu'))
+        #model.add(Dense(30, activation='relu'))
+        #model.add(Dense(30, activation='relu'))
         model.add(Dense(self.action_size, activation='softmax'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
@@ -195,7 +195,7 @@ class PNetwork():
 
 class Replay_Memory():
 
-    def __init__(self, game, memory_size=50000, burn_in=10000, kind = CBUFFER):
+    def __init__(self, game, memory_size=50000, burn_in=1000, kind = CBUFFER):
         self.cache = [None for i in range(memory_size)]
         self.size = 0
         self.new = 0
@@ -252,6 +252,7 @@ class DQN_Agent():
         # Here is also a good place to set environmental parameters,
         # as well as training parameters - number of episodes / iterations, etc.
 
+        self.gamma = 1.0
         self.alpha = 0.0001
         self.epsilon = 0.5
         self.epsilon_target = 0.05
@@ -260,7 +261,7 @@ class DQN_Agent():
         self.env = game.env
         self.state_size = self.env.state_size
         self.action_size = self.env.action_size
-        self.eta = 0.5
+        self.eta = 0.1
 
         self.deep = deep
 
@@ -273,12 +274,9 @@ class DQN_Agent():
         self.update_period = 1000
 
         self.iteration = 0
-        if random.random() < self.eta:
-            self.brp = True
-            self.sigma = self.epsilon_greedy_policy
-        else:
-            self.brp = False
-            self.sigma = self.greedy_policy
+
+        self.brp = True
+        self.sigma = self.epsilon_greedy_policy
 
     def init_replay(self, game):
         self.replayRL = Replay_Memory(game, kind=CBUFFER)
@@ -324,10 +322,12 @@ class DQN_Agent():
         self.state = next_state
         self.replayRL.append([state, action, reward, next_state, done])
         if self.brp:
-            self.replaySL.append([state, action])
+            action_onehot = [0 for _ in range(self.action_size)]
+            action_onehot[action] = 1
+            self.replaySL.append([state, action_onehot])
 
-        replayRLbatch = self.replayRL.sample(32)
-        replaySLbatch = self.replaySL.sample(32)
+        replayRLbatch = self.replayRL.sample_batch(32)
+        replaySLbatch = self.replaySL.sample_batch(32)
 
         #should use crossentropy loss, softmax activation
         self.policynet.update_batch(32, replaySLbatch)
@@ -337,10 +337,14 @@ class DQN_Agent():
         if self.iteration % self.update_period == 0:
             self.valuenet.update_target()
 
+    # Only call this in burn-in please
+
     def appendreplay(self, state, action, reward, next_state, done):
         self.replayRL.append([state, action, reward, next_state, done])
         if self.brp:
-            self.replaySL.append([state, action])
+            action_onehot = [0 for _ in range(self.action_size)]
+            action_onehot[action] = 1
+            self.replaySL.append([state, action_onehot])
 
 class RandomAgent():
     def resetepisode(self, training=False):
@@ -387,11 +391,11 @@ class DQN_Game():
         meta_state = self.env.get_meta_state()
 
         iteration = 0
+        freqs = [0 for _ in range(len(self.agents) + 1)]
 
         for episode in range(episodes):
             [i.resetepisode() for i in self.agents]
             prevstates = self.env.reset()
-
             while True:
                 iteration += 1
 
@@ -400,19 +404,24 @@ class DQN_Game():
 
                 actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
                 next_state, rewards, is_terminal = self.env.step(actionset)
+                freqs[actionset[0]] += 1
 
-                [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+                [self.agents[i].updatereplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
                     for i in range(len(self.agents))]
                 cur_state = next_state
                 if is_terminal:
                     break
 
             if run_test:
+                print(freqs)
+                freqs = [0 for _ in range(len(self.agents) + 1)]
+
                 avg_score_differential, avg_score_townie, avg_score_mafia = self.test()
                 testing_rewards.append(avg_score_differential)
                 townie_rewards.append(avg_score_townie)
                 mafia_rewards.append(avg_score_mafia)
                 run_test = False
+
         print(testing_rewards)
         print(townie_rewards)
         print(mafia_rewards)
@@ -443,7 +452,8 @@ class DQN_Game():
                 cur_state = next_state
                 if is_terminal:
                     for i in range(len(self.agents)):
-                        if mafia_list[i] == random_ai:
+                        # If this agent is not controlled by the random ai
+                        if mafia_list[i] != random_ai:
                             total_ai_reward += rewards[i]
                             ai_role_count[random_ai] += 1
                             ai_role_reward[random_ai] += rewards[i]
@@ -459,7 +469,6 @@ class DQN_Game():
         # Initialize your replay memory with a burn_in number of episodes / transitions.
         for _ in range(0, bns):
             actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
-            # print(actionset)
             next_state, rewards, is_terminal = self.env.step(actionset)
 
             [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
@@ -472,7 +481,6 @@ class DQN_Game():
         # need to episode to finish or else monitor complains
         while True:
             actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
-            # print(actionset)
             next_state, rewards, is_terminal = self.env.step(actionset)
 
             [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
