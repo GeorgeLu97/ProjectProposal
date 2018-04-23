@@ -206,7 +206,7 @@ class ToyEnvironment():
         self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
 
         # is_mafia, alive, kill_matrix
-        self.state_size = self.player_count + self.player_count + self.player_count + (self.player_count * self.player_count)
+        self.state_size = self.player_count
         self.action_size = self.player_count + 1
 
     def get_villagers_alive(self):
@@ -232,9 +232,10 @@ class ToyEnvironment():
                 target = actionset[i]
                 if target == ToyEnvironment.ABSTAIN:
                     continue
-                elif self.alive[target] == 1:
-                    mark_dead.append(target)
-                    self.kill_matrix[i][target] = 1
+                actual_target = self.permutation_matrix[i][target]
+                if self.alive[actual_target] == 1:
+                    mark_dead.append(actual_target)
+                    self.kill_matrix[i][actual_target] = 1
         for dead in mark_dead:
             self.alive[dead] = 0
 
@@ -250,24 +251,85 @@ class ToyEnvironment():
             terminal = True
 
         new_state = [self.get_state(i) for i in range(self.player_count)]
+        """
+        print(new_state)
+        print(self.alive)
+        print(self.kill_matrix)
+        """
         return new_state, reward, terminal
 
+    # If villager, self is always first, others are in an arbitrary permutation
+    # If mafia, self is always first. Mafia is second,
+    # others are in arbitrary permutation
     def get_state(self, agent):
+        """
         own_position_portion = [1 if agent == i else 0 for i in range(self.player_count)]
         is_mafia_portion = self.is_mafia if self.is_mafia[agent] else [0 for _ in range(self.player_count)]
+        """
+        agent_permutation = self.permutation_matrix[agent]
 
-        flat_kill_matrix = sum(self.kill_matrix, [])
-        state = own_position_portion + is_mafia_portion + self.alive + flat_kill_matrix
+
+        permuted_alive_matrix = [self.alive[i] for i in agent_permutation]
+        permuted_kill_matrix = [[self.kill_matrix[i][j] for j in agent_permutation] for i in agent_permutation]
+        #flat_kill_matrix = sum(permuted_kill_matrix, [])
+        flat_kill_matrix = []
+        state = permuted_alive_matrix + flat_kill_matrix
 
         state = np.array(state)
         return state
 
+    def get_meta_state(self):
+        return self.permutation_matrix
+
+    def generate_player_permutation(self):
+        permutation_matrix = []
+
+        # Make permutation matrix for the mafia
+        for i in range(self.mafia_count):
+            agent_permutation = []
+            agent_permutation.append(i) # self is first
+
+            # Add all other mafia next
+            for k in range(self.player_count):
+                agent_num = self.permutation[k]
+                if agent_num < self.mafia_count and agent_num != i:
+                    agent_permutation.append(agent_num)
+
+            # Add all remaining players
+            for k in range(self.player_count):
+                agent_num = self.permutation[k]
+                if agent_num >= self.mafia_count:
+                    agent_permutation.append(agent_num)
+            permutation_matrix.append(agent_permutation)
+
+        # Make permutation matrix for non-mafia:
+        for i in range(self.mafia_count, self.player_count):
+            agent_permutation = []
+            agent_permutation.append(i)
+
+            for k in range(self.player_count):
+                agent_num = self.permutation[k]
+                if agent_num != i:
+                    agent_permutation.append(agent_num)
+            permutation_matrix.append(agent_permutation)
+
+        # print(permutation_matrix)
+        return permutation_matrix
+
+
     def reset(self):
-        self.mafia = np.random.permutation(self.player_count)[:self.mafia_count]
+        # This is used to generate the permutation matrix
+        self.permutation = np.random.permutation(self.player_count)
+
+        # PermutationMatrix[i][j] = who the jth person should be the ith player
+        self.permutation_matrix = self.generate_player_permutation()
+
+        # Probably not useful
         self.is_mafia = [0 for _ in range(self.player_count)]
-        for i in self.mafia:
+        for i in range(self.mafia_count):
             self.is_mafia[i] = 1
 
+        # These are the objective alive and kill matrices
         self.alive = [1 for _ in range(self.player_count)]
         self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
 

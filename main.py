@@ -35,8 +35,8 @@ class QNetwork():
 
         model = Sequential()
         model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
-        model.add(Dense(30, activation='relu'))
-        model.add(Dense(30, activation='relu'))
+        #model.add(Dense(30, activation='relu'))
+        #model.add(Dense(30, activation='relu'))
         model.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
@@ -46,8 +46,8 @@ class QNetwork():
 
         model2 = Sequential()
         model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
-        model2.add(Dense(30, activation='relu'))
-        model2.add(Dense(30, activation='relu'))
+        #model2.add(Dense(30, activation='relu'))
+        #model2.add(Dense(30, activation='relu'))
         model2.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
@@ -367,6 +367,7 @@ class DQN_Game():
 
         # true/false input to whether good or bad agent
         self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
+
         self.render = render
         self.use_replay = use_replay
         [i.init_replay(self) for i in self.agents]
@@ -383,6 +384,8 @@ class DQN_Game():
         run_test = False
 
         cur_state = self.env.reset()
+        meta_state = self.env.get_meta_state()
+
         iteration = 0
 
         for episode in range(episodes):
@@ -451,8 +454,6 @@ class DQN_Game():
         return (total_ai_reward / 100, ai_role_reward[0] / ai_role_count[0], ai_role_reward[1] / ai_role_count[1])
 
 
-
-
     def burn_in_memory(self, bns):
         cur_state = self.env.reset()
         # Initialize your replay memory with a burn_in number of episodes / transitions.
@@ -501,30 +502,9 @@ def main(args):
     environment_name = args.env
     '''
 
-    '''
-    if environment_name == 'MountainCar':
-      avg = -200
-      while avg == -200:
-        agent = DQN_Agent(environment_name, render=args.render,
-           use_replay=args.replay, deep=args.deep, monitor=args.monitor)
-        avg = agent.train(10000)
-      print("Found")
-    elif environment_name == 'CartPole':
-      agent = DQN_Agent(environment_name, render = args.render,
-            use_replay=args.replay, deep=args.deep, monitor=args.monitor)
-      if args.model_file is not None:
-        agent.qnet.load_model_weights(args.model_file)
-        _, avg, stddev = agent.test(100, agent.epsilon_target)
-        print((avg, stddev))
-      else:
-        agent.train(100000)
-    '''
 
     agent = DQN_Game('MountainCar')
     agent.train(60000)
-    # _, avg, stddev = agent.test(100, agent.epsilon_target)
-    #print("avg + std")
-    # print((avg, stddev))
 
 
 if __name__ == '__main__':
