@@ -193,7 +193,7 @@ class PNetwork():
 
 class Replay_Memory():
 
-  def __init__(self, game, memory_size=50000, burn_in=5000, kind = CBUFFER):
+  def __init__(self, game, memory_size=100000, burn_in=1000, kind = CBUFFER):
     self.cache = [None for i in range(memory_size)]
     self.size = 0
     self.new = 0
@@ -226,7 +226,7 @@ class Replay_Memory():
         self.size += 1
       else:
         if random.random() * self.size < self.cap:
-          self.cache[random.randint(0, self.cap-1)] = transition
+          self.cache[random.randint(0, self.cap - 1)] = transition
           self.size += 1
         else:
           self.size += 1
@@ -252,8 +252,8 @@ class DQN_Agent():
     # Here is also a good place to set environmental parameters,
     # as well as training parameters - number of episodes / iterations, etc.
 
-    self.gamma = 1.0
-    self.RLalpha = 0.01
+    self.gamma = 0.99
+    self.RLalpha = 0.1
     self.SLalpha = 0.005
 
     self.epsilon_initial = 0.5
@@ -263,7 +263,7 @@ class DQN_Agent():
     self.env = game.env
     self.state_size = self.env.state_size
     self.action_size = self.env.action_size
-    self.eta = 0.25
+    self.eta = 0.1
 
     self.deep = deep
 
@@ -332,23 +332,30 @@ class DQN_Agent():
     if self.iteration % self.network_update_period == 0:
       for i in range(self.network_updates):
         batch = self.network_update_period
-        replayRLbatch = self.replayRL.sample_batch(batch)
-        replaySLbatch = self.replaySL.sample_batch(batch)
-        # should use crossentropy loss, softmax activation
-        self.policynet.update_batch(batch, replaySLbatch)
 
+        replayRLbatch = self.replayRL.sample_batch(batch)
         # should use mse loss, just have # action_size results
         self.valuenet.update_batch(batch, replayRLbatch)
+
+        if self.replaySL.size >= 1000:
+          replaySLbatch = self.replaySL.sample_batch(batch)
+          # should use crossentropy loss, softmax activation
+          self.policynet.update_batch(batch, replaySLbatch)
 
     if self.iteration % self.target_update_period == 0:
       self.valuenet.update_target()
 
   def appendreplay(self, state, action, reward, next_state, done):
     self.replayRL.append([state, action, reward, next_state, done])
-    if self.brp:
-      action_onehot = [0 for _ in range(self.action_size)]
-      action_onehot[action] = 1
-      self.replaySL.append([state, action_onehot])
+
+  def surveySLMemory(self):
+    freqs = [0 for i in range(self.action_size)]
+    for item in self.replaySL.cache[:self.replaySL.size]:
+      for j in range(self.action_size):
+        if item[1][j] == 1:
+          freqs[j] += 1
+
+    print(freqs)
 
 class RandomAgent():
   def resetepisode(self, training=False):
@@ -398,8 +405,8 @@ class DQN_Game():
 
         actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        if self.agents[2].brp:
-          freqs[actionset[2]] += 1
+        if self.agents[0].brp:
+          freqs[actionset[0]] += 1
 
         for i in range(len(self.agents)): 
           self.agents[i].updatereplay(cur_state[i], actionset[i],
@@ -447,7 +454,8 @@ class DQN_Game():
       while True:
         actionset = [agent_list[i].act(cur_state[i]) for i in range(len(agent_list))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        freqs[actionset[2]] += 1
+        if mafia_list[0] != random_ai:
+          freqs[actionset[0]] += 1
 
         cur_state = next_state
         if is_terminal:
@@ -462,7 +470,7 @@ class DQN_Game():
     print(freqs)
     print("Townie: " + str(ai_role_reward[0] / ai_role_count[0]))
     print("Mafia: " + str(ai_role_reward[1] / ai_role_count[1]))
-    return (total_ai_reward / 100, ai_role_reward[0] / ai_role_count[0], ai_role_reward[1] / ai_role_count[1])
+    return (total_ai_reward / 500, ai_role_reward[0] / ai_role_count[0], ai_role_reward[1] / ai_role_count[1])
 
 
   def burn_in_memory(self, bns):
@@ -512,8 +520,8 @@ def main(args):
   '''
 
 
-  agent = DQN_Game('MountainCar')
-  agent.train(500000)
+  game = DQN_Game('MountainCar')
+  game.train(500000)
 
 
 if __name__ == '__main__':

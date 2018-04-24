@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import random
 
 """
 class MafiaEnv():
@@ -209,6 +210,8 @@ class ToyEnvironment():
     self.state_size = self.player_count
     self.action_size = self.player_count + 1
 
+    self.round_num = 0
+
   def get_villagers_alive(self):
     roles = self.is_mafia
     alive = self.alive
@@ -226,6 +229,7 @@ class ToyEnvironment():
     return False
 
   def step(self, actionset): 
+    self.round_num += 1
     mark_dead = []
     for i in range(len(actionset)):
       if self.alive[i] == 1:
@@ -233,7 +237,7 @@ class ToyEnvironment():
         if target == ToyEnvironment.ABSTAIN:
           continue
         actual_target = self.permutation_matrix[i][target]
-        if self.alive[actual_target] == 1:
+        if random.random() < 0.33 and self.alive[actual_target] == 1:
           mark_dead.append(actual_target)
           self.kill_matrix[i][actual_target] = 1
     for dead in mark_dead:
@@ -243,11 +247,15 @@ class ToyEnvironment():
     reward = [0 for i in range(self.player_count)]
     if not self.get_villagers_alive() and not self.get_mafia_alive():
       terminal = True
+    elif self.round_num >= 20:
+      terminal = True
     elif not self.get_villagers_alive():
       reward = [1 if self.is_mafia[i] else -1 for i in range(self.player_count)]
+      # reward = [1 if self.alive[i] else 0 for i in range(self.player_count)]
       terminal = True
     elif not self.get_mafia_alive():
       reward = [-1 if self.is_mafia[i] else 1 for i in range(self.player_count)]
+      # reward = [1 if self.alive[i] else 0 for i in range(self.player_count)]
       terminal = True
 
     new_state = [self.get_state(i) for i in range(self.player_count)]
@@ -310,6 +318,8 @@ class ToyEnvironment():
 
     return permutation_matrix
 
+  def get_success_metrics(self):
+    return []
 
   def reset(self):
     # This is used to generate the permutation matrix
@@ -326,5 +336,7 @@ class ToyEnvironment():
     # These are the objective alive and kill matrices
     self.alive = [1 for _ in range(self.player_count)]
     self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
+
+    self.round_num = 0
 
     return [self.get_state(i) for i in range(self.player_count)]
