@@ -34,10 +34,10 @@ class QNetwork():
 
 
         model = Sequential()
-        #model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
         #model.add(Dense(30, activation='relu'))
         #model.add(Dense(30, activation='relu'))
-        model.add(Dense(self.action_size, activation='relu', input_dim=(self.state_size)))
+        model.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
         model.compile(loss='mse',
@@ -45,10 +45,10 @@ class QNetwork():
                       metrics=['accuracy'])
 
         model2 = Sequential()
-        #model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
+        model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
         #model2.add(Dense(30, activation='relu'))
         #model2.add(Dense(30, activation='relu'))
-        model2.add(Dense(self.action_size, activation='relu', input_dim=(self.state_size)))
+        model2.add(Dense(self.action_size, activation='relu'))
 
         adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
         model2.compile(loss='mse',
@@ -59,9 +59,11 @@ class QNetwork():
         self.modeltarget = model2
 
 
-    # uses train
-    def predict(self, states):
-        return self.modeltarget.predict(states)
+    # uses target
+    def predict(self, states, model=None):
+        if model is None:
+            model = self.modeltarget
+        return model.predict(states)
 
     # states : np.array (num_inputs, num_dims)
     # return best_action : (num_inputs, )
@@ -90,7 +92,7 @@ class QNetwork():
 
         _, next_state_values = self.best_action_batch(next_states, terminals)
         new_targets = rewards + (self.agent.gamma * next_state_values)
-        cur_targets = self.predict(states)
+        cur_targets = self.predict(states, self.modeltrain)
 
         # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
         cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
@@ -101,7 +103,7 @@ class QNetwork():
         self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
 
     def update_target(self):
-        self.modeltarget.set_weights(self.modeltrain.get_weights)
+        self.modeltarget.set_weights(self.modeltrain.get_weights())
 
     def save_model_weights(self, weight_file1, weight_file2):
         # Helper function to save your model / weights.
@@ -195,7 +197,7 @@ class PNetwork():
 
 class Replay_Memory():
 
-    def __init__(self, game, memory_size=50000, burn_in=1000, kind = CBUFFER):
+    def __init__(self, game, memory_size=50000, burn_in=5000, kind = CBUFFER):
         self.cache = [None for i in range(memory_size)]
         self.size = 0
         self.new = 0
@@ -261,17 +263,15 @@ class DQN_Agent():
         self.env = game.env
         self.state_size = self.env.state_size
         self.action_size = self.env.action_size
-        self.eta = 0.1
+        self.eta = 0.4
 
         self.deep = deep
 
         self.policynet = PNetwork(self.env, self, deep=deep)
         self.valuenet = QNetwork(self.env, self, deep=deep)
 
-        # make targetnet just part of valuenet
-        self.targetnet = self.valuenet # yeah i know this isn't what i want
-
-        self.update_period = 1000
+        self.target_update_period = 1000
+        self.network_update_period = 128
 
         self.iteration = 0
 
@@ -297,7 +297,6 @@ class DQN_Agent():
         return best_action
 
     def resetepisode(self, testing=False):
-        self.iteration = 0
         if testing:
             self.brp = False
             self.sigma = self.greedy_policy
@@ -326,15 +325,17 @@ class DQN_Agent():
             action_onehot[action] = 1
             self.replaySL.append([state, action_onehot])
 
-        replayRLbatch = self.replayRL.sample_batch(32)
-        replaySLbatch = self.replaySL.sample_batch(32)
+        if self.iteration % self.network_update_period == 0:
+            batch = self.network_update_period
+            replayRLbatch = self.replayRL.sample_batch(batch)
+            replaySLbatch = self.replaySL.sample_batch(batch)
+            #should use crossentropy loss, softmax activation
+            self.policynet.update_batch(batch, replaySLbatch)
 
-        #should use crossentropy loss, softmax activation
-        self.policynet.update_batch(32, replaySLbatch)
+            #should use mse loss, just have # action_size results
+            self.valuenet.update_batch(batch, replayRLbatch)
 
-        #should use mse loss, just have # action_size results
-        self.valuenet.update_batch(32, replayRLbatch)
-        if self.iteration % self.update_period == 0:
+        if self.iteration % self.target_update_period == 0:
             self.valuenet.update_target()
 
     # Only call this in burn-in please
@@ -399,15 +400,17 @@ class DQN_Game():
             while True:
                 iteration += 1
 
-                if iteration % 1000 == 0:
+                if iteration % 5000 == 0:
                     run_test = True
 
                 actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
                 next_state, rewards, is_terminal = self.env.step(actionset)
                 freqs[actionset[0]] += 1
 
-                [self.agents[i].updatereplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
-                    for i in range(len(self.agents))]
+                for i in range(len(self.agents)): 
+                    self.agents[i].updatereplay(cur_state[i], actionset[i],
+                         rewards[i], next_state[i], is_terminal)
+                    
                 cur_state = next_state
                 if is_terminal:
                     break
