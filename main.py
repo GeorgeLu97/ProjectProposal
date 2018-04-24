@@ -14,6 +14,7 @@ from keras.engine.topology import Layer
 import random
 import time
 import games
+import math
 
 DUEL = 2
 DEEP = 1
@@ -39,9 +40,10 @@ class QNetwork():
     #model.add(Dense(30, activation='relu'))
     model.add(Dense(self.action_size, activation='relu'))
 
-    adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+    #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+    sgd = optimizers.SGD(lr=self.agent.RLalpha)
     model.compile(loss='mse',
-            optimizer=adam,
+            optimizer=sgd,
             metrics=['accuracy'])
 
     model2 = Sequential()
@@ -50,9 +52,10 @@ class QNetwork():
     #model2.add(Dense(30, activation='relu'))
     model2.add(Dense(self.action_size, activation='relu'))
 
-    adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+    # adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+    sgd = optimizers.SGD(lr=self.agent.RLalpha)
     model2.compile(loss='mse',
-            optimizer=adam,
+            optimizer=sgd,
             metrics=['accuracy'])
 
     self.modeltrain = model
@@ -139,9 +142,10 @@ class PNetwork():
     #model.add(Dense(30, activation='relu'))
     model.add(Dense(self.action_size, activation='softmax'))
 
-    adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+    #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
+    sgd = optimizers.SGD(lr=self.agent.SLalpha)
     model.compile(loss='categorical_crossentropy',
-            optimizer=adam,
+            optimizer=sgd,
             metrics=['accuracy'])
     self.model = model
 
@@ -155,24 +159,16 @@ class PNetwork():
   # return best_action_value : (num_inputs, )
   def best_action_batch(self, states):
     batch = self.predict(states)
-    newbatch = []
-    for i in batch:
-      k = random.random()
-      for j in range(len(i)):
-        if i[j] > k:
-          newbatch.append(j)
-          break
-        else:
-          k -= i[j]
-    return newbatch
+
+    random_actions = []
+    for probs in batch:
+      random_actions.append(np.random.choice(self.action_size, 1, p=probs)[0])
+    return random_actions
 
   def best_action(self, state):
     return self.best_action_batch(np.array([state]))[0]
 
   def update_batch(self, size, experienceList):
-    target_list = []
-    cur_list = []
-
     states = np.array([experience[0] for experience in experienceList])
     actions = np.array([experience[1] for experience in experienceList])
 
@@ -215,14 +211,16 @@ class Replay_Memory():
   def sample_batch(self, batch_size=32):
     # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
     # You will feed this to your model to train.
-    return random.sample(self.cache[:self.size], batch_size)
+    return random.sample(self.cache[:min(self.size, self.cap)], batch_size)
 
   def append(self, transition):
     if self.kind == CBUFFER:
+      # Use circular buffer sampling
       self.cache[self.new] = transition
       self.size = min(self.size + 1, self.cap)
       self.new = (self.new + 1) % self.cap
     else:
+      # Use Reservoir Sampling
       if self.size < self.cap:
         self.cache[self.size] = transition
         self.size += 1
@@ -255,15 +253,17 @@ class DQN_Agent():
     # as well as training parameters - number of episodes / iterations, etc.
 
     self.gamma = 1.0
-    self.alpha = 0.0001
-    self.epsilon = 0.5
-    self.epsilon_target = 0.05
-    self.epsilon_delta = (0.5 - 0.05) / 100000
+    self.RLalpha = 0.01
+    self.SLalpha = 0.005
+
+    self.epsilon_initial = 0.5
+    self.epsilon = self.epsilon_initial
+
     self.episodes = 1000000
     self.env = game.env
     self.state_size = self.env.state_size
     self.action_size = self.env.action_size
-    self.eta = 0.4
+    self.eta = 0.25
 
     self.deep = deep
 
@@ -272,6 +272,7 @@ class DQN_Agent():
 
     self.target_update_period = 1000
     self.network_update_period = 128
+    self.network_updates = 2
 
     self.iteration = 0
 
@@ -317,6 +318,9 @@ class DQN_Agent():
     return action
 
   def updatereplay(self, state, action, reward, next_state, done):
+    # See paper for recommended epsilon decay
+    self.epsilon = self.epsilon_initial / math.ceil(math.sqrt((self.iteration + 1)  / 10000))
+
     self.iteration += 1
     self.state = next_state
     self.replayRL.append([state, action, reward, next_state, done])
@@ -326,19 +330,18 @@ class DQN_Agent():
       self.replaySL.append([state, action_onehot])
 
     if self.iteration % self.network_update_period == 0:
-      batch = self.network_update_period
-      replayRLbatch = self.replayRL.sample_batch(batch)
-      replaySLbatch = self.replaySL.sample_batch(batch)
-      #should use crossentropy loss, softmax activation
-      self.policynet.update_batch(batch, replaySLbatch)
+      for i in range(self.network_updates):
+        batch = self.network_update_period
+        replayRLbatch = self.replayRL.sample_batch(batch)
+        replaySLbatch = self.replaySL.sample_batch(batch)
+        # should use crossentropy loss, softmax activation
+        self.policynet.update_batch(batch, replaySLbatch)
 
-      #should use mse loss, just have # action_size results
-      self.valuenet.update_batch(batch, replayRLbatch)
+        # should use mse loss, just have # action_size results
+        self.valuenet.update_batch(batch, replayRLbatch)
 
     if self.iteration % self.target_update_period == 0:
       self.valuenet.update_target()
-
-  # Only call this in burn-in please
 
   def appendreplay(self, state, action, reward, next_state, done):
     self.replayRL.append([state, action, reward, next_state, done])
@@ -356,21 +359,11 @@ class RandomAgent():
 
 class DQN_Game():
 
-  # In this class, we will implement functions to do the following.
-  # (1) Create an instance of the Q Network class.
-  # (2) Create a function that constructs a policy from the Q values predicted by the Q Network.
-  #   (a) Epsilon Greedy Policy.
-  #     (b) Greedy Policy.
-  # (3) Create a function to train the Q Network, by interacting with the environment.
-  # (4) Create a function to test the Q Network's performance on the environment.
-  # (5) Create a function for Experience Replay.
-
   def __init__(self, environment_name, render=False, use_replay=False,
          deep=0, monitor=False):
 
     self.env = games.ToyEnvironment() # current environment
 
-    # true/false input to whether good or bad agent
     self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
 
     self.render = render
@@ -405,7 +398,8 @@ class DQN_Game():
 
         actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        freqs[actionset[0]] += 1
+        if self.agents[2].brp:
+          freqs[actionset[2]] += 1
 
         for i in range(len(self.agents)): 
           self.agents[i].updatereplay(cur_state[i], actionset[i],
@@ -435,7 +429,9 @@ class DQN_Game():
     total_ai_reward = 0
     ai_role_reward = [0, 0]
     ai_role_count = [0, 0]
-    for episode in range(100):
+    freqs = [0 for _ in range(len(self.agents) + 1)]
+
+    for episode in range(500):
       cur_state = self.env.reset()
       [i.resetepisode(testing=True) for i in self.agents]
       mafia_list = self.env.is_mafia
@@ -449,8 +445,9 @@ class DQN_Game():
           agent_list[i] = self.agents[i]
 
       while True:
-        actionset = [agent_list[i].act(cur_state[i]) for i in range(len(self.agents))]
+        actionset = [agent_list[i].act(cur_state[i]) for i in range(len(agent_list))]
         next_state, rewards, is_terminal = self.env.step(actionset)
+        freqs[actionset[2]] += 1
 
         cur_state = next_state
         if is_terminal:
@@ -458,10 +455,11 @@ class DQN_Game():
             # If this agent is not controlled by the random ai
             if mafia_list[i] != random_ai:
               total_ai_reward += rewards[i]
-              ai_role_count[random_ai] += 1
-              ai_role_reward[random_ai] += rewards[i]
+              ai_role_count[1 - random_ai] += 1
+              ai_role_reward[1 - random_ai] += rewards[i]
               break
           break
+    print(freqs)
     print("Townie: " + str(ai_role_reward[0] / ai_role_count[0]))
     print("Mafia: " + str(ai_role_reward[1] / ai_role_count[1]))
     return (total_ai_reward / 100, ai_role_reward[0] / ai_role_count[0], ai_role_reward[1] / ai_role_count[1])
@@ -515,7 +513,7 @@ def main(args):
 
 
   agent = DQN_Game('MountainCar')
-  agent.train(60000)
+  agent.train(500000)
 
 
 if __name__ == '__main__':

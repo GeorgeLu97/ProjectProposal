@@ -251,11 +251,7 @@ class ToyEnvironment():
       terminal = True
 
     new_state = [self.get_state(i) for i in range(self.player_count)]
-    """
-    print(new_state)
-    print(self.alive)
-    print(self.kill_matrix)
-    """
+
     return new_state, reward, terminal
 
   # If villager, self is always first, others are in an arbitrary permutation
@@ -268,10 +264,9 @@ class ToyEnvironment():
     """
     agent_permutation = self.permutation_matrix[agent]
 
-
     permuted_alive_matrix = [self.alive[i] for i in agent_permutation]
     permuted_kill_matrix = [[self.kill_matrix[i][j] for j in agent_permutation] for i in agent_permutation]
-    #flat_kill_matrix = sum(permuted_kill_matrix, [])
+    # flat_kill_matrix = sum(permuted_kill_matrix, [])
     flat_kill_matrix = []
     state = permuted_alive_matrix + flat_kill_matrix
 
@@ -313,7 +308,6 @@ class ToyEnvironment():
           agent_permutation.append(agent_num)
       permutation_matrix.append(agent_permutation)
 
-    # print(permutation_matrix)
     return permutation_matrix
 
 
