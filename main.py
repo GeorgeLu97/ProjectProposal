@@ -372,13 +372,18 @@ class DQN_Game():
 
     self.env = games.SimpleMafia() # current environment
 
-    self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
+    #self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
+
+    self.agents = [i for i in range(self.env.player_count)]
+
+    self.agentsTypes = [DQN_Agent(self) for i in range(2)]
 
     self.render = render
     self.use_replay = use_replay
-    [i.init_replay(self) for i in self.agents]
+    # [i.init_replay(self) for i in self.agents]
+    [i.init_replay(self) for i in self.agentsTypes]
 
-    self.burn_in_memory(self.agents[0].replayRL.burn_in)
+    self.burn_in_memory(self.agentsTypes[0].replayRL.burn_in)
     print("Completed All Agent and Game Initialization")
 
   def train(self, episodes):
@@ -393,9 +398,8 @@ class DQN_Game():
 
     iteration = 0
     freqs = [0 for _ in range(len(self.agents) + 1)]
-
     for episode in range(episodes):
-      [i.resetepisode() for i in self.agents]
+      [i.resetepisode() for i in self.agentsTypes]
       prevstates = self.env.reset()
       while True:
         iteration += 1
@@ -403,13 +407,13 @@ class DQN_Game():
         if iteration % 5000 == 0:
           run_test = True
 
-        actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+        actionset = [self.agentsTypes[self.env.is_mafia[i]].act(cur_state[i]) for i in range(len(self.agents))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        if self.agents[0].brp:
+        if self.agentsTypes[0].brp:
           freqs[actionset[0]] += 1
 
-        for i in range(len(self.agents)): 
-          self.agents[i].updatereplay(cur_state[i], actionset[i],
+        for i in range(len(self.agents)):
+          self.agentsTypes[self.env.is_mafia[i]].updatereplay(cur_state[i], actionset[i],
              rewards[i], next_state[i], is_terminal)
           
         cur_state = next_state
@@ -440,7 +444,7 @@ class DQN_Game():
 
     for episode in range(500):
       cur_state = self.env.reset()
-      [i.resetepisode(testing=True) for i in self.agents]
+      [i.resetepisode(testing=True) for i in self.agentsTypes]
       mafia_list = self.env.is_mafia
       random_ai = random.randint(0, 1)
       agent_list = [None for _ in range(len(self.agents))]
@@ -449,7 +453,7 @@ class DQN_Game():
         if mafia_list[i] == random_ai:
           agent_list[i] = RandomAgent()
         else:
-          agent_list[i] = self.agents[i]
+          agent_list[i] = self.agentsTypes[0] #0 is town
 
       while True:
         actionset = [agent_list[i].act(cur_state[i]) for i in range(len(agent_list))]
@@ -477,10 +481,10 @@ class DQN_Game():
     cur_state = self.env.reset()
     # Initialize your replay memory with a burn_in number of episodes / transitions.
     for _ in range(0, bns):
-      actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+      actionset = [self.agentsTypes[self.env.is_mafia[i]].act(cur_state[i]) for i in range(len(self.agents))]
       next_state, rewards, is_terminal = self.env.step(actionset)
 
-      [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+      [self.agentsTypes[self.env.is_mafia[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
        for i in range(len(self.agents))]
 
       cur_state = next_state
@@ -489,10 +493,10 @@ class DQN_Game():
 
     # need to episode to finish or else monitor complains
     while True:
-      actionset = [self.agents[i].act(cur_state[i]) for i in range(len(self.agents))]
+      actionset = [self.agentsTypes[self.env.is_mafia[i]].act(cur_state[i]) for i in range(len(self.agents))]
       next_state, rewards, is_terminal = self.env.step(actionset)
 
-      [self.agents[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+      [self.agentsTypes[self.env.is_mafia[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
        for i in range(len(self.agents))]
 
       cur_state = next_state
