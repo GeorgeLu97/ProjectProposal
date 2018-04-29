@@ -14,6 +14,7 @@ from keras.engine.topology import Layer
 import random
 import time
 import games
+import mediumgames
 import math
 
 DUEL = 2
@@ -369,7 +370,7 @@ class DQN_Game():
   def __init__(self, environment_name, render=False, use_replay=False,
          deep=0, monitor=False):
 
-    self.env = games.ToyEnvironment() # current environment
+    self.env = games.SimpleMafia() # current environment
 
     self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
 
@@ -380,8 +381,7 @@ class DQN_Game():
     self.burn_in_memory(self.agents[0].replayRL.burn_in)
     print("Completed All Agent and Game Initialization")
 
-  def train(self, episodes=5000):
-    # Unused right now
+  def train(self, episodes):
     testing_rewards = []
     townie_rewards = []
     mafia_rewards = []
@@ -521,7 +521,7 @@ def main(args):
 
 
   game = DQN_Game('MountainCar')
-  game.train(500000)
+  game.train(50000)
 
 
 if __name__ == '__main__':
