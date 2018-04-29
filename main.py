@@ -376,20 +376,21 @@ class DQN_Game():
 
     self.agents = [i for i in range(self.env.player_count)]
 
-    self.agentsTypes = [DQN_Agent(self) for i in range(2)]
+    self.agentsTypes = [DQN_Agent(self) for i in range(self.env.num_teams)]
 
     self.render = render
     self.use_replay = use_replay
     # [i.init_replay(self) for i in self.agents]
     [i.init_replay(self) for i in self.agentsTypes]
 
+    # Burns in memory for all agents
     self.burn_in_memory(self.agentsTypes[0].replayRL.burn_in)
+
     print("Completed All Agent and Game Initialization")
 
   def train(self, episodes):
     testing_rewards = []
-    townie_rewards = []
-    mafia_rewards = []
+    testing_team_rewards = [[] for _ in range(self.env.num_teams)]
 
     run_test = False
 
@@ -407,13 +408,13 @@ class DQN_Game():
         if iteration % 5000 == 0:
           run_test = True
 
-        actionset = [self.agentsTypes[self.env.is_mafia[i]].act(cur_state[i]) for i in range(len(self.agents))]
+        actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
         next_state, rewards, is_terminal = self.env.step(actionset)
         if self.agentsTypes[0].brp:
           freqs[actionset[0]] += 1
 
         for i in range(len(self.agents)):
-          self.agentsTypes[self.env.is_mafia[i]].updatereplay(cur_state[i], actionset[i],
+          self.agentsTypes[self.env.team[i]].updatereplay(cur_state[i], actionset[i],
              rewards[i], next_state[i], is_terminal)
           
         cur_state = next_state
@@ -424,67 +425,70 @@ class DQN_Game():
         print(freqs)
         freqs = [0 for _ in range(len(self.agents) + 1)]
 
-        avg_score_differential, avg_score_townie, avg_score_mafia = self.test()
+        avg_score_differential, avg_team_scores = self.test()
         testing_rewards.append(avg_score_differential)
-        townie_rewards.append(avg_score_townie)
-        mafia_rewards.append(avg_score_mafia)
+        for i in range(self.env.num_teams):
+          testing_team_rewards[i].append(avg_team_scores[i])
         run_test = False
 
     print(testing_rewards)
-    print(townie_rewards)
-    print(mafia_rewards)
+    print(testing_team_rewards)
     print("completed training")
 
   # For testing, we test set one team to be our trained agents and the other team to be random agents
   def test(self):
+    NUM_TEST_ITERS = 500
+
     total_ai_reward = 0
-    ai_role_reward = [0, 0]
-    ai_role_count = [0, 0]
+    ai_role_reward = [0 for i in range(self.env.num_teams)]
+    ai_role_count = [0 for i in range(self.env.num_teams)]
     freqs = [0 for _ in range(len(self.agents) + 1)]
 
-    for episode in range(500):
+    for episode in range(NUM_TEST_ITERS):
       cur_state = self.env.reset()
       [i.resetepisode(testing=True) for i in self.agentsTypes]
-      mafia_list = self.env.is_mafia
-      random_ai = random.randint(0, 1)
+      team_list = self.env.team
+      random_ai = random.randint(0, self.env.num_teams - 1)
       agent_list = [None for _ in range(len(self.agents))]
 
       for i in range(len(self.agents)):
-        if mafia_list[i] == random_ai:
+        if team_list[i] == random_ai:
           agent_list[i] = RandomAgent()
         else:
-          agent_list[i] = self.agentsTypes[0] #0 is town
+          agent_list[i] = self.agentsTypes[team_list[i]]
 
       while True:
         actionset = [agent_list[i].act(cur_state[i]) for i in range(len(agent_list))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        if mafia_list[0] != random_ai:
+        if team_list[0] != random_ai:
           freqs[actionset[0]] += 1
 
         cur_state = next_state
         if is_terminal:
           for i in range(len(self.agents)):
             # If this agent is not controlled by the random ai
-            if mafia_list[i] != random_ai:
+            if team_list[i] != random_ai:
               total_ai_reward += rewards[i]
-              ai_role_count[1 - random_ai] += 1
-              ai_role_reward[1 - random_ai] += rewards[i]
+              ai_role_count[team_list[i]] += 1
+              ai_role_reward[team_list[i]] += rewards[i]
               break
           break
     print(freqs)
-    print("Townie: " + str(ai_role_reward[0] / ai_role_count[0]))
-    print("Mafia: " + str(ai_role_reward[1] / ai_role_count[1]))
-    return (total_ai_reward / 500, ai_role_reward[0] / ai_role_count[0], ai_role_reward[1] / ai_role_count[1])
+    ai_average_reward = [(ai_role_reward[i] / ai_role_count[i]) for i in range(self.env.num_teams)]
+    for x in ai_average_reward:
+      print(x)
+
+    return (total_ai_reward / NUM_TEST_ITERS, ai_average_reward)
 
 
   def burn_in_memory(self, bns):
     cur_state = self.env.reset()
     # Initialize your replay memory with a burn_in number of episodes / transitions.
     for _ in range(0, bns):
-      actionset = [self.agentsTypes[self.env.is_mafia[i]].act(cur_state[i]) for i in range(len(self.agents))]
+      actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
       next_state, rewards, is_terminal = self.env.step(actionset)
 
-      [self.agentsTypes[self.env.is_mafia[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+      [self.agentsTypes[self.env.team[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
        for i in range(len(self.agents))]
 
       cur_state = next_state
@@ -493,10 +497,10 @@ class DQN_Game():
 
     # need to episode to finish or else monitor complains
     while True:
-      actionset = [self.agentsTypes[self.env.is_mafia[i]].act(cur_state[i]) for i in range(len(self.agents))]
+      actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
       next_state, rewards, is_terminal = self.env.step(actionset)
 
-      [self.agentsTypes[self.env.is_mafia[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+      [self.agentsTypes[self.env.team[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
        for i in range(len(self.agents))]
 
       cur_state = next_state

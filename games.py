@@ -204,6 +204,8 @@ class SimpleMafia():
   def __init__(self):
     self.player_count = 5
     self.mafia_count = 2
+    self.num_teams = 2
+    self.team = None # Will be filled in by game
 
     # Keep these up to date
     self.state_size = self.player_count
@@ -330,8 +332,8 @@ class SimpleMafia():
     # Attempt to kill someone other than self
     # Killing Alive People to Dead people Ratio
     # Killing people who are trying to kill you
-
-
+    
+    return
 
   def reset(self, save_metrics=False):
     # This is used to generate the permutation matrix
@@ -344,6 +346,7 @@ class SimpleMafia():
     self.is_mafia = [0 for _ in range(self.player_count)]
     for i in range(self.mafia_count):
       self.is_mafia[i] = 1
+    self.team = self.is_mafia
 
     # These are the objective alive and kill matrices
     self.alive = [1 for _ in range(self.player_count)]
