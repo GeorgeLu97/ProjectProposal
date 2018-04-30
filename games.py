@@ -191,26 +191,32 @@ class MafiaEnv():
     self.turn = 0
 """
 
-class ToyEnvironment():
+# Rules: 2 Mafia, 3 Villagers. Each round, all living agents designate a
+# target. Target dies with probability 0.33. Each side wins if all others 
+# eliminated and their side is not. Game ends in 20 turns.
+
+class SimpleMafia():
+  # Action 5 means abstain
   ABSTAIN = 5
+
+  ROUND_LIMIT = 20
 
   def __init__(self):
     self.player_count = 5
     self.mafia_count = 2
-    self.permutation = np.random.permutation(self.player_count)
-    self.mafia = self.permutation[:self.mafia_count]
-    self.is_mafia = [0 for _ in range(self.player_count)]
-    for i in self.mafia:
-      self.is_mafia[i] = 1
+    self.num_teams = 2
+    self.team = None # Will be filled in by game
 
-    self.alive = [1 for _ in range(self.player_count)]
-    self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
-
-    # is_mafia, alive, kill_matrix
+    # Keep these up to date
     self.state_size = self.player_count
     self.action_size = self.player_count + 1
 
-    self.round_num = 0
+    # Initialize the first game
+    self.reset()
+
+    # We will save some info about past games here
+    # We might query this to see how well our agents are learning
+    self.metrics = []
 
   def get_villagers_alive(self):
     roles = self.is_mafia
@@ -234,12 +240,12 @@ class ToyEnvironment():
     for i in range(len(actionset)):
       if self.alive[i] == 1:
         target = actionset[i]
-        if target == ToyEnvironment.ABSTAIN:
+        if target == SimpleMafia.ABSTAIN:
           continue
         actual_target = self.permutation_matrix[i][target]
         if random.random() < 0.33 and self.alive[actual_target] == 1:
           mark_dead.append(actual_target)
-          self.kill_matrix[i][actual_target] = 1
+        self.kill_matrix[i][actual_target] += 1
     for dead in mark_dead:
       self.alive[dead] = 0
 
@@ -247,7 +253,7 @@ class ToyEnvironment():
     reward = [0 for i in range(self.player_count)]
     if not self.get_villagers_alive() and not self.get_mafia_alive():
       terminal = True
-    elif self.round_num >= 20:
+    elif self.round_num >= self.ROUND_LIMIT:
       terminal = True
     elif not self.get_villagers_alive():
       reward = [1 if self.is_mafia[i] else -1 for i in range(self.player_count)]
@@ -319,9 +325,17 @@ class ToyEnvironment():
     return permutation_matrix
 
   def get_success_metrics(self):
-    return []
+    return 
 
-  def reset(self):
+  def save_success_metrics(self):
+    # Things that we currently think are good
+    # Attempt to kill someone other than self
+    # Killing Alive People to Dead people Ratio
+    # Killing people who are trying to kill you
+    
+    return
+
+  def reset(self, save_metrics=False):
     # This is used to generate the permutation matrix
     self.permutation = np.random.permutation(self.player_count)
 
@@ -332,11 +346,13 @@ class ToyEnvironment():
     self.is_mafia = [0 for _ in range(self.player_count)]
     for i in range(self.mafia_count):
       self.is_mafia[i] = 1
+    self.team = self.is_mafia
 
     # These are the objective alive and kill matrices
     self.alive = [1 for _ in range(self.player_count)]
     self.kill_matrix = [[0 for _ in range(self.player_count)] for _ in range(self.player_count)]
 
+    # Stop after some number of rounds
     self.round_num = 0
 
     return [self.get_state(i) for i in range(self.player_count)]
