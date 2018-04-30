@@ -1,4 +1,7 @@
-class MediumMafia():
+# This game is setup to be a relatively simple game that for which the
+# best strategy nontrivially depends on the strategies of the other agents
+
+class MediumGame():
   ABSTAIN = 5
 
   def __init__(self):

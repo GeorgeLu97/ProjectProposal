@@ -14,6 +14,7 @@ from keras.engine.topology import Layer
 import random
 import time
 import games
+import rps
 import mediumgames
 import math
 
@@ -307,7 +308,7 @@ class DQN_Agent():
     # as well as training parameters - number of episodes / iterations, etc.
 
     self.gamma = 0.99
-    self.RLalpha = 0.1
+    self.RLalpha = 0.01
     self.SLalpha = 0.005
 
     self.epsilon_initial = 0.5
@@ -412,18 +413,22 @@ class DQN_Agent():
     print(freqs)
 
 class RandomAgent():
+  def __init__(self, env):
+    self.action_size = env.action_size
+
   def resetepisode(self, training=False):
     pass
 
   def act(self, state):
-    return random.randint(0, 5)
+    return random.randint(0, self.action_size - 1)
 
 class DQN_Game():
 
   def __init__(self, environment_name, render=False, use_replay=False,
          deep=0, monitor=False):
 
-    self.env = games.SimpleMafia() # current environment
+    self.env = rps.RPS() # current environment
+    self.action_size = self.env.action_size
 
     #self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
 
@@ -448,10 +453,9 @@ class DQN_Game():
     run_test = False
 
     cur_state = self.env.reset()
-    meta_state = self.env.get_meta_state()
 
     iteration = 0
-    freqs = [0 for _ in range(len(self.agents) + 1)]
+    freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
     for episode in range(episodes):
       [i.resetepisode() for i in self.agentsTypes]
       prevstates = self.env.reset()
@@ -463,8 +467,9 @@ class DQN_Game():
 
         actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        if self.agentsTypes[0].brp:
-          freqs[actionset[0]] += 1
+        for j in range(self.env.num_teams):
+          if self.agentsTypes[j].brp:
+            freqs[j][actionset[j]] += 1
 
         for i in range(len(self.agents)):
           self.agentsTypes[self.env.team[i]].updatereplay(cur_state[i], actionset[i],
@@ -476,7 +481,7 @@ class DQN_Game():
 
       if run_test:
         print(freqs)
-        freqs = [0 for _ in range(len(self.agents) + 1)]
+        freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
 
         avg_score_differential, avg_team_scores = self.test()
         testing_rewards.append(avg_score_differential)
@@ -487,6 +492,8 @@ class DQN_Game():
     print(testing_rewards)
     print(testing_team_rewards)
     print("completed training")
+    for agentType in self.agentsTypes:
+      agentType.surveySLMemory()
 
   # For testing, we test set one team to be our trained agents and the other team to be random agents
   def test(self):
@@ -495,7 +502,7 @@ class DQN_Game():
     total_ai_reward = 0
     ai_role_reward = [0 for i in range(self.env.num_teams)]
     ai_role_count = [0 for i in range(self.env.num_teams)]
-    freqs = [0 for _ in range(len(self.agents) + 1)]
+    freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
 
     for episode in range(NUM_TEST_ITERS):
       cur_state = self.env.reset()
@@ -506,15 +513,16 @@ class DQN_Game():
 
       for i in range(len(self.agents)):
         if team_list[i] == random_ai:
-          agent_list[i] = RandomAgent()
+          agent_list[i] = RandomAgent(self.env)
         else:
           agent_list[i] = self.agentsTypes[team_list[i]]
 
       while True:
         actionset = [agent_list[i].act(cur_state[i]) for i in range(len(agent_list))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        if team_list[0] != random_ai:
-          freqs[actionset[0]] += 1
+        for j in range(self.env.num_teams):
+          if team_list[j] != random_ai:
+            freqs[j][actionset[j]] += 1
 
         cur_state = next_state
         if is_terminal:
