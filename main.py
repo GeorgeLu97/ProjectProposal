@@ -6,11 +6,6 @@ import keras
 import numpy as np, gym, sys, copy, argparse
 import tensorflow as tf
 
-from keras.models import Sequential
-from keras.layers import Dense, LSTM
-from keras import optimizers
-from keras.engine.topology import Layer
-
 import random
 import time
 import games
@@ -18,276 +13,10 @@ import rps
 import mediumgames
 import math
 
-DUEL = 2
-DEEP = 1
-
-RESERVOIR = 0
-CBUFFER = 1
-
-class QNetwork():
-
-  def __init__(self, env, agent, deep=0):
-
-    self.modeltrain = None
-    self.modeltarget = None
-    self.agent = agent
-
-    self.state_size = env.state_size
-    self.action_size = env.action_size
-
-
-    model = Sequential()
-    model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
-    #model.add(Dense(30, activation='relu'))
-    #model.add(Dense(30, activation='relu'))
-    model.add(Dense(self.action_size, activation='relu'))
-
-    #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
-    sgd = optimizers.SGD(lr=self.agent.RLalpha)
-    model.compile(loss='mse',
-            optimizer=sgd,
-            metrics=['accuracy'])
-
-    model2 = Sequential()
-    model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
-    #model2.add(Dense(30, activation='relu'))
-    #model2.add(Dense(30, activation='relu'))
-    model2.add(Dense(self.action_size, activation='relu'))
-
-    # adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
-    sgd = optimizers.SGD(lr=self.agent.RLalpha)
-    model2.compile(loss='mse',
-            optimizer=sgd,
-            metrics=['accuracy'])
-
-    self.modeltrain = model
-    self.modeltarget = model2
-
-
-  # uses target
-  def predict(self, states, model=None):
-    if model is None:
-      model = self.modeltarget
-    return model.predict(states)
-
-  # states : np.array (num_inputs, num_dims)
-  # return best_action : (num_inputs, )
-  # return best_action_value : (num_inputs, )
-  def best_action_batch(self, states, terminals=None):
-    next_state_actions = self.predict(states)
-    best_actions = np.argmax(next_state_actions, axis=1)
-    best_action_value = np.max(next_state_actions, axis=1)
-    if terminals is not None:
-      best_action_value[terminals] = 0.0
-    return (best_actions, best_action_value)
-
-  def best_action(self, state):
-    actions, action_value = self.best_action_batch(np.array([state]))
-    return (actions[0], action_value[0])
-
-  def update_batch(self, size, experienceList):
-    target_list = []
-    cur_list = []
-
-    next_states = np.array([experience[3] for experience in experienceList])
-    rewards = np.array([experience[2] for experience in experienceList])
-    states = np.array([experience[0] for experience in experienceList])
-    actions = np.array([experience[1] for experience in experienceList])
-    terminals = np.array([experience[4] for experience in experienceList])
-
-    _, next_state_values = self.best_action_batch(next_states, terminals)
-    new_targets = rewards + (self.agent.gamma * next_state_values)
-    cur_targets = self.predict(states, self.modeltrain)
-
-    # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
-    cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
-
-    self.modeltrain.fit(states, cur_targets, batch_size=size, verbose=0)
-
-  def update(self, state, action, reward, next_state, is_terminal):
-    self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
-
-  def update_target(self):
-    self.modeltarget.set_weights(self.modeltrain.get_weights())
-
-  def save_model_weights(self, weight_file1, weight_file2):
-    # Helper function to save your model / weights.
-    self.modeltrain.save_weights(weight_file1)
-    self.modeltarget.save_weights(weight_file2)
-    pass
-
-  def load_model(self, model_file1, model_file2):
-    # Helper function to load an existing model.
-    self.modeltrain = keras.models.load_model(model_file1)
-    self.modeltarget = keras.models.load_model(model_file2)
-
-  def load_model_weights(self, weight_file1, weight_file2):
-    # Helper function to load model weights.
-    self.modeltrain.load_weights(weight_file1)
-    self.modeltarget.load_weights(weight_file2)
-
-class PNetwork():
-
-  def __init__(self, env, agent, deep=0):
-    # Define your network architecture here. It is also a good idea to define any training operations
-    # and optimizers here, initialize your variables, or alternately compile your model here.
-
-    self.model = None
-    self.agent = agent
-
-    self.state_size = env.state_size
-    self.action_size = env.action_size
-
-    model = Sequential()
-    model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
-    #model.add(Dense(30, activation='relu'))
-    #model.add(Dense(30, activation='relu'))
-    model.add(Dense(self.action_size, activation='softmax'))
-
-    #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
-    sgd = optimizers.SGD(lr=self.agent.SLalpha)
-    model.compile(loss='categorical_crossentropy',
-            optimizer=sgd,
-            metrics=['accuracy'])
-    self.model = model
-
-  # states : np.array (num_inputs, num_dims)
-  # return : np.array (num_inputs, num_actions)
-  def predict(self, states):
-    return self.model.predict(states)
-
-  # states : np.array (num_inputs, num_dims)
-  # return best_action : (num_inputs, )
-  # return best_action_value : (num_inputs, )
-  def best_action_batch(self, states):
-    batch = self.predict(states)
-
-    random_actions = []
-    for probs in batch:
-      random_actions.append(np.random.choice(self.action_size, 1, p=probs)[0])
-    return random_actions
-
-  def best_action(self, state):
-    return self.best_action_batch(np.array([state]))[0]
-
-  def update_batch(self, size, experienceList):
-    states = np.array([experience[0] for experience in experienceList])
-    actions = np.array([experience[1] for experience in experienceList])
-
-    self.model.fit(states, actions, batch_size=size, verbose=0)
-
-  def update(self, state, action, reward, next_state, is_terminal):
-    self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
-
-  def save_model_weights(self, weight_file):
-    # Helper function to save your model / weights.
-    self.model.save_weights(weight_file)
-    pass
-
-  def load_model(self, model_file):
-    # Helper function to load an existing model.
-    self.model = keras.models.load_model(model_file)
-
-  def load_model_weights(self, weight_file):
-    # Helper function to load model weights.
-    self.model.load_weights(weight_file)
-
-
-class Replay_Memory():
-
-  def __init__(self, game, memory_size=100000, burn_in=1000, kind = CBUFFER):
-    self.cache = [None for i in range(memory_size)]
-    self.size = 0
-    self.new = 0
-    self.burn_in = burn_in
-    self.cap = memory_size
-    self.kind = kind
-
-    # The memory essentially stores transitions recorder from the agent
-    # taking actions in the environment.
-    # Burn in episodes define the number of episodes that are written into the memory from the
-    # randomly initialized agent. Memory size is the maximum size after which old elements in the memory are replaced.
-    # A simple (if not the most efficient) was to implement the memory is as a list of transitions.
-
-
-  def sample_batch(self, batch_size=32):
-    # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
-    # You will feed this to your model to train.
-    return random.sample(self.cache[:min(self.size, self.cap)], batch_size)
-
-  def append(self, transition):
-    if self.kind == CBUFFER:
-      # Use circular buffer sampling
-      self.cache[self.new] = transition
-      self.size = min(self.size + 1, self.cap)
-      self.new = (self.new + 1) % self.cap
-    else:
-      # Use Reservoir Sampling
-      if self.size < self.cap:
-        self.cache[self.size] = transition
-        self.size += 1
-      else:
-        if random.random() * self.size < self.cap:
-          self.cache[random.randint(0, self.cap - 1)] = transition
-          self.size += 1
-        else:
-          self.size += 1
-
-  class Prioritized_Replay_Memory():
-
-    def __init__(self, game, memory_size=100000, burn_in=1000, kind=CBUFFER):
-      self.cache = [None for i in range(memory_size)]
-      self.size = 0
-      self.new = 0
-      self.burn_in = burn_in
-      self.cap = memory_size
-      self.kind = kind
-      self.max_priority = 1
-      self.weights = [0 for i in range(memory_size)]
-
-      # The memory essentially stores transitions recorder from the agent
-      # taking actions in the environment.
-      # Burn in episodes define the number of episodes that are written into the memory from the
-      # randomly initialized agent. Memory size is the maximum size after which old elements in the memory are replaced.
-      # A simple (if not the most efficient) was to implement the memory is as a list of transitions.
-
-    def sample_batch(self, agent, batch_size=32):
-      # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
-      # You will feed this to your model to train.
-      # print(np.random.choice(self.cache, batch_size, p=self.weights (but normalized)))
-      true_weights = self.weights / np.sum(self.weights)
-      indices = np.random.choice(list(range(min(self.size, self.cap))), batch_size, p=true_weights)
-      # need to update weights/priority here too
-      for i in indices:
-        [state, action, reward, next_state, done] = self.cache[i]
-        self.weights[i] = abs(reward + self.agent.gamma * np.max(agent.QNetwork.model.predict([next_state])[0]) - agent.QNetwork.model.predict([state])[0][action])
-
-      return random.sample(self.cache[:min(self.size, self.cap)], batch_size)
-
-    def append(self, transition):
-      if self.kind == CBUFFER:
-        # Use circular buffer sampling
-        self.cache[self.new] = transition
-        self.weights[self.new] = self.max_priority
-        self.size = min(self.size + 1, self.cap)
-        self.new = (self.new + 1) % self.cap
-      else:
-        # Use Reservoir Sampling
-        if self.size < self.cap:
-          self.cache[self.size] = transition
-          self.weights[self.size] = self.max_priority
-          self.size += 1
-        else:
-          if random.random() * self.size < self.cap:
-            ind = random.randint(0, self.cap - 1)
-            self.cache[ind] = transition
-            self.weights[ind] = self.mex_priority
-            self.size += 1
-          else:
-            self.size += 1
-
-
-
+from parameters import parameters_dict
+from networks import PNetwork, QNetwork
+import replay
+from replay import Replay_Memory
 
 class DQN_Agent():
 
@@ -308,7 +37,7 @@ class DQN_Agent():
     # as well as training parameters - number of episodes / iterations, etc.
 
     self.gamma = 0.99
-    self.RLalpha = 0.01
+    self.RLalpha = 0.1
     self.SLalpha = 0.005
 
     self.epsilon_initial = 0.5
@@ -335,8 +64,8 @@ class DQN_Agent():
     self.sigma = self.epsilon_greedy_policy
 
   def init_replay(self, game):
-    self.replayRL = Replay_Memory(game, kind=CBUFFER)
-    self.replaySL = Replay_Memory(game, kind=RESERVOIR)
+    self.replayRL = Replay_Memory(game, kind=replay.CBUFFER)
+    self.replaySL = Replay_Memory(game, kind=replay.RESERVOIR)
 
   # q_values: State * Action -> Value
   def epsilon_greedy_policy(self, state):
@@ -458,7 +187,7 @@ class DQN_Game():
     freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
     for episode in range(episodes):
       [i.resetepisode() for i in self.agentsTypes]
-      prevstates = self.env.reset()
+      cur_state = self.env.reset()
       while True:
         iteration += 1
 
@@ -590,7 +319,7 @@ def main(args):
 
 
   game = DQN_Game('MountainCar')
-  game.train(50000)
+  game.train(500000)
 
 
 if __name__ == '__main__':

@@ -21,11 +21,11 @@ class RPS():
 
     if actionset[0] == (actionset[1] + 1) % 3:
       terminal = True
-      self.game_state = 1
+      self.game_state = 0
       reward = [self.rps_rewards[0][actionset[0]], -self.rps_rewards[0][actionset[0]]]
     elif actionset[1] == (actionset[0] + 1) % 3:
       terminal = True
-      self.game_state = 1
+      self.game_state = 0
       reward = [-self.rps_rewards[1][actionset[1]], self.rps_rewards[1][actionset[1]]]
 
     new_state = [self.get_state(i) for i in range(self.player_count)]
@@ -34,6 +34,9 @@ class RPS():
 
   def get_state(self, agent):
     return [self.game_state]
+
+  def get_meta_state(self):
+    return self.game_state
 
   def get_success_metrics(self):
     return 
@@ -45,6 +48,6 @@ class RPS():
     self.team = [0, 1] 
     self.rps_rewards = [[1, 1, 1], [1, 1, 1]]
 
-    self.game_state = 0
+    self.game_state = 1
 
     return [self.get_state(i) for i in range(self.player_count)]
