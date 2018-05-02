@@ -1,3 +1,5 @@
+import numpy as np
+
 class RPS():
   def __init__(self):
     self.player_count = 2
@@ -44,9 +46,20 @@ class RPS():
   def save_success_metrics(self):    
     return
 
+  # Optimal exploit strategy is always a single action
+  def compute_exploitability(self, team, pnetwork):
+    action_probs = pnetwork.predict(np.array([[0]]))[0]
+    max_exploitability = -100.0
+    for action_taken in range(3):
+      value = (self.rps_rewards[team][action_taken] * action_probs[(action_taken + 2) % 3]
+          - self.rps_rewards[1 - team][(action_taken + 1) % 3] * action_probs[(action_taken + 1) % 3])
+      max_exploitability = max(value, max_exploitability)
+
+    return max_exploitability
+
   def reset(self, save_metrics=False):
     self.team = [0, 1] 
-    self.rps_rewards = [[1, 1, 1], [1, 1, 1]]
+    self.rps_rewards = [[0.5, 1, 2], [0.5, 1, 2]]
 
     self.game_state = 1
 

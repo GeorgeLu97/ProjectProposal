@@ -18,6 +18,8 @@ from networks import PNetwork, QNetwork
 import replay
 from replay import Replay_Memory
 
+from utils import *
+
 class DQN_Agent():
 
   # In this class, we will implement functions to do the following.
@@ -29,7 +31,7 @@ class DQN_Agent():
   # (4) Create a function to test the Q Network's performance on the environment.
   # (5) Create a function for Experience Replay.
 
-  def __init__(self, game, render=False, use_replay=False,
+  def __init__(self, game, parameters=None, render=False, use_replay=False,
          deep=0, monitor=False):
 
     # Create an instance of the network itself, as well as the memory.
@@ -40,6 +42,9 @@ class DQN_Agent():
     self.RLalpha = 0.1
     self.SLalpha = 0.005
 
+    self.RLBufferSize = 1000
+    self.SLBufferSize = 50000
+
     self.epsilon_initial = 0.5
     self.epsilon = self.epsilon_initial
 
@@ -47,14 +52,16 @@ class DQN_Agent():
     self.env = game.env
     self.state_size = self.env.state_size
     self.action_size = self.env.action_size
-    self.eta = 0.1
+    self.eta = 0.25
 
     self.deep = deep
 
     self.policynet = PNetwork(self.env, self, deep=deep)
     self.valuenet = QNetwork(self.env, self, deep=deep)
 
-    self.target_update_period = 1
+
+    self.target_update_period = 100
+
     self.network_update_period = 128
     self.network_updates = 2
 
@@ -64,8 +71,11 @@ class DQN_Agent():
     self.sigma = self.epsilon_greedy_policy
 
   def init_replay(self, game):
-    self.replayRL = Replay_Memory(game, kind=replay.CBUFFER, memory_size=1000)
-    self.replaySL = Replay_Memory(game, kind=replay.RESERVOIR, memory_size=100000)
+
+    self.replayRL = Replay_Memory(game, memory_size=self.RLBufferSize,
+       kind=replay.CBUFFER)
+    self.replaySL = Replay_Memory(game, memory_size=self.SLBufferSize,
+       kind=replay.RESERVOIR)
 
   # q_values: State * Action -> Value
   def epsilon_greedy_policy(self, state):
@@ -157,13 +167,16 @@ class DQN_Game():
          deep=0, monitor=False):
 
     self.env = rps.RPS() # current environment
+
     self.action_size = self.env.action_size
 
     #self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
 
     self.agents = [i for i in range(self.env.player_count)]
 
-    self.agentsTypes = [DQN_Agent(self) for i in range(self.env.num_teams)]
+    self.parameters = parameters_dict[environment_name]
+    self.agentsTypes = [DQN_Agent(self, parameters=self.parameters)
+        for i in range(self.env.num_teams)]
 
     self.render = render
     self.use_replay = use_replay
@@ -177,8 +190,8 @@ class DQN_Game():
 
   def train(self, episodes):
     testing_rewards = []
-    testing_team_rewards = [[] for _ in range(self.env.num_teams)]
-
+    testing_team_rewards = []
+    exploitabilities = []
     run_test = False
 
     cur_state = self.env.reset()
@@ -213,20 +226,32 @@ class DQN_Game():
         freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
 
         avg_score_differential, avg_team_scores = self.test()
+        exploitabilities.append(self.check_exploitability())
         testing_rewards.append(avg_score_differential)
-        for i in range(self.env.num_teams):
-          testing_team_rewards[i].append(avg_team_scores[i])
+        testing_team_rewards.append(avg_team_scores)
+
         run_test = False
 
+
     print(testing_rewards)
-    print(testing_team_rewards)
+    print(rotate_stats(testing_team_rewards))
+    print(rotate_stats(exploitabilities))
     print("completed training")
     for agentType in self.agentsTypes:
       agentType.surveySLMemory()
 
+  def check_exploitability(self):
+    es = []
+    for team in range(self.env.num_teams):
+      agent = self.agentsTypes[team]
+      e = self.env.compute_exploitability(team, agent.policynet)
+      es.append(e)
+    print(es)
+    return es
+
   # For testing, we test set one team to be our trained agents and the other team to be random agents
   def test(self):
-    NUM_TEST_ITERS = 500
+    NUM_TEST_ITERS = 1000
 
     total_ai_reward = 0
     ai_role_reward = [0 for i in range(self.env.num_teams)]
@@ -265,8 +290,8 @@ class DQN_Game():
           break
     print(freqs)
     ai_average_reward = [(ai_role_reward[i] / ai_role_count[i]) for i in range(self.env.num_teams)]
-    for x in ai_average_reward:
-      print(x)
+    #for x in ai_average_reward:
+    #  print(x)
 
     for i in range(len(self.agentsTypes)):
       j = self.agentsTypes[i]
@@ -323,8 +348,8 @@ def main(args):
   '''
 
 
-  game = DQN_Game('MountainCar')
-  game.train(500000)
+  game = DQN_Game('rps')
+  game.train(200000)
 
 
 if __name__ == '__main__':
