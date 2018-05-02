@@ -29,7 +29,7 @@ class DQN_Agent():
   # (4) Create a function to test the Q Network's performance on the environment.
   # (5) Create a function for Experience Replay.
 
-  def __init__(self, game, render=False, use_replay=False,
+  def __init__(self, game, parameters=None, render=False, use_replay=False,
          deep=0, monitor=False):
 
     # Create an instance of the network itself, as well as the memory.
@@ -40,6 +40,9 @@ class DQN_Agent():
     self.RLalpha = 0.1
     self.SLalpha = 0.005
 
+    self.RLBufferSize = 1000
+    self.SLBufferSize = 50000
+
     self.epsilon_initial = 0.5
     self.epsilon = self.epsilon_initial
 
@@ -47,14 +50,14 @@ class DQN_Agent():
     self.env = game.env
     self.state_size = self.env.state_size
     self.action_size = self.env.action_size
-    self.eta = 0.1
+    self.eta = 0.5
 
     self.deep = deep
 
     self.policynet = PNetwork(self.env, self, deep=deep)
     self.valuenet = QNetwork(self.env, self, deep=deep)
 
-    self.target_update_period = 1000
+    self.target_update_period = 100
     self.network_update_period = 128
     self.network_updates = 2
 
@@ -64,8 +67,10 @@ class DQN_Agent():
     self.sigma = self.epsilon_greedy_policy
 
   def init_replay(self, game):
-    self.replayRL = Replay_Memory(game, kind=replay.CBUFFER)
-    self.replaySL = Replay_Memory(game, kind=replay.RESERVOIR)
+    self.replayRL = Replay_Memory(game, memory_size=self.RLBufferSize,
+       kind=replay.CBUFFER)
+    self.replaySL = Replay_Memory(game, memory_size=self.SLBufferSize,
+       kind=replay.RESERVOIR)
 
   # q_values: State * Action -> Value
   def epsilon_greedy_policy(self, state):
@@ -157,13 +162,16 @@ class DQN_Game():
          deep=0, monitor=False):
 
     self.env = rps.RPS() # current environment
+
     self.action_size = self.env.action_size
 
     #self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
 
     self.agents = [i for i in range(self.env.player_count)]
 
-    self.agentsTypes = [DQN_Agent(self) for i in range(self.env.num_teams)]
+    self.parameters = parameters_dict[environment_name]
+    self.agentsTypes = [DQN_Agent(self, parameters=self.parameters)
+        for i in range(self.env.num_teams)]
 
     self.render = render
     self.use_replay = use_replay
@@ -226,7 +234,7 @@ class DQN_Game():
 
   # For testing, we test set one team to be our trained agents and the other team to be random agents
   def test(self):
-    NUM_TEST_ITERS = 500
+    NUM_TEST_ITERS = 2500
 
     total_ai_reward = 0
     ai_role_reward = [0 for i in range(self.env.num_teams)]
@@ -318,7 +326,7 @@ def main(args):
   '''
 
 
-  game = DQN_Game('MountainCar')
+  game = DQN_Game('rps')
   game.train(500000)
 
 

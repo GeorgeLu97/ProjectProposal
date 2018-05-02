@@ -44,9 +44,11 @@ class Replay_Memory():
         else:
           self.size += 1
 
+# TODO (David): Implement importance sampling replay memory
+class IS_Replay_Memory():
+  pass
+
 class Prioritized_Replay_Memory():
-  RESERVOIR = 0
-  CBUFFER = 1
 
   def __init__(self, game, memory_size=100000, burn_in=1000, kind=CBUFFER):
     self.cache = [None for i in range(memory_size)]
