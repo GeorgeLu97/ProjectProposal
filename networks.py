@@ -35,7 +35,8 @@ class QNetwork():
     #model2.add(Dense(30, activation='relu'))
     model2.add(Dense(self.action_size, activation='sigmoid'))
     # Note on Sigmoid vs ReLU
-    # reLU is bad for our toy RPS example since all 0 output is bad
+    # reLU is bad for our RPS example since all close to 0 output is hard for ReLU to
+    # model well
 
     # adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
     sgd = optimizers.SGD(lr=self.agent.RLalpha)
