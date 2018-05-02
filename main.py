@@ -54,7 +54,7 @@ class DQN_Agent():
     self.policynet = PNetwork(self.env, self, deep=deep)
     self.valuenet = QNetwork(self.env, self, deep=deep)
 
-    self.target_update_period = 1000
+    self.target_update_period = 1
     self.network_update_period = 128
     self.network_updates = 2
 
@@ -64,8 +64,8 @@ class DQN_Agent():
     self.sigma = self.epsilon_greedy_policy
 
   def init_replay(self, game):
-    self.replayRL = Replay_Memory(game, kind=replay.CBUFFER)
-    self.replaySL = Replay_Memory(game, kind=replay.RESERVOIR)
+    self.replayRL = Replay_Memory(game, kind=replay.CBUFFER, memory_size=1000)
+    self.replaySL = Replay_Memory(game, kind=replay.RESERVOIR, memory_size=100000)
 
   # q_values: State * Action -> Value
   def epsilon_greedy_policy(self, state):
@@ -267,6 +267,11 @@ class DQN_Game():
     ai_average_reward = [(ai_role_reward[i] / ai_role_count[i]) for i in range(self.env.num_teams)]
     for x in ai_average_reward:
       print(x)
+
+    for i in range(len(self.agentsTypes)):
+      j = self.agentsTypes[i]
+      result = j.valuenet.modeltrain.predict([0])
+      print(i,result[0])
 
     return (total_ai_reward / NUM_TEST_ITERS, ai_average_reward)
 
