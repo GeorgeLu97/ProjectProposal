@@ -148,6 +148,11 @@ class DQN_Agent():
 
     print(freqs)
 
+  def surveyRLMemory(self):
+    for item in self.replayRL.cache[:self.replayRL.size]:
+      print(item)
+
+
 class RandomAgent():
   def __init__(self, env):
     self.action_size = env.action_size
@@ -241,6 +246,7 @@ class DQN_Game():
     es = []
     for team in range(self.env.num_teams):
       agent = self.agentsTypes[team]
+      print(agent.valuenet.predict(np.array([[0]]))[0])
       e = self.env.compute_exploitability(team, agent.policynet)
       es.append(e)
     print(es)

@@ -21,14 +21,15 @@ class RPS():
     terminal = False
     reward = [0, 0]
 
+    terminal = True
+    self.game_state = 0
+
     if actionset[0] == (actionset[1] + 1) % 3:
-      terminal = True
-      self.game_state = 0
       reward = [self.rps_rewards[0][actionset[0]], -self.rps_rewards[0][actionset[0]]]
     elif actionset[1] == (actionset[0] + 1) % 3:
-      terminal = True
-      self.game_state = 0
       reward = [-self.rps_rewards[1][actionset[1]], self.rps_rewards[1][actionset[1]]]
+    else:
+      reward = [0, 0]
 
     new_state = [self.get_state(i) for i in range(self.player_count)]
 
@@ -49,6 +50,7 @@ class RPS():
   # Optimal exploit strategy is always a single action
   def compute_exploitability(self, team, pnetwork):
     action_probs = pnetwork.predict(np.array([[0]]))[0]
+    print(action_probs)
     max_exploitability = -100.0
     for action_taken in range(3):
       value = (self.rps_rewards[team][action_taken] * action_probs[(action_taken + 2) % 3]

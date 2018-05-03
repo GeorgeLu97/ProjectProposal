@@ -21,7 +21,7 @@ class QNetwork():
     model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
     #model.add(Dense(30, activation='relu'))
     #model.add(Dense(30, activation='relu'))
-    model.add(Dense(self.action_size, activation='sigmoid'))
+    model.add(Dense(self.action_size, activation='linear'))
 
     #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
     sgd = optimizers.SGD(lr=self.agent.RLalpha)
@@ -33,7 +33,7 @@ class QNetwork():
     model2.add(Dense(30, activation='relu', input_dim=(self.state_size)))
     #model2.add(Dense(30, activation='relu'))
     #model2.add(Dense(30, activation='relu'))
-    model2.add(Dense(self.action_size, activation='sigmoid'))
+    model2.add(Dense(self.action_size, activation='linear'))
     # Note on Sigmoid vs ReLU
     # reLU is bad for our RPS example since all close to 0 output is hard for ReLU to
     # model well
