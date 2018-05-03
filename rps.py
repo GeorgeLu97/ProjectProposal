@@ -22,7 +22,7 @@ class RPS():
     reward = [0, 0]
 
     terminal = True
-    self.game_state = 0
+    self.game_state = 1
 
     if actionset[0] == (actionset[1] + 1) % 3:
       reward = [self.rps_rewards[0][actionset[0]], -self.rps_rewards[0][actionset[0]]]
@@ -63,6 +63,6 @@ class RPS():
     self.team = [0, 1] 
     self.rps_rewards = [[0.5, 1, 2], [0.5, 1, 2]]
 
-    self.game_state = 1
+    self.game_state = 0
 
     return [self.get_state(i) for i in range(self.player_count)]

@@ -52,7 +52,7 @@ class DQN_Agent():
     self.env = game.env
     self.state_size = self.env.state_size
     self.action_size = self.env.action_size
-    self.eta = 0.25
+    self.eta = 0.1
 
     self.deep = deep
 
@@ -230,8 +230,8 @@ class DQN_Game():
         print(freqs)
         freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
 
-        avg_score_differential, avg_team_scores = self.test()
         exploitabilities.append(self.check_exploitability())
+        avg_score_differential, avg_team_scores = self.test()
         testing_rewards.append(avg_score_differential)
         testing_team_rewards.append(avg_team_scores)
 
@@ -299,11 +299,6 @@ class DQN_Game():
     #for x in ai_average_reward:
     #  print(x)
 
-    for i in range(len(self.agentsTypes)):
-      j = self.agentsTypes[i]
-      result = j.valuenet.modeltrain.predict([0])
-      print(i,result[0])
-
     return (total_ai_reward / NUM_TEST_ITERS, ai_average_reward)
 
 
@@ -355,7 +350,7 @@ def main(args):
 
 
   game = DQN_Game('rps')
-  game.train(200000)
+  game.train(500000)
 
 
 if __name__ == '__main__':
