@@ -27,7 +27,7 @@ class DQN_Agent():
   # (5) Create a function for Experience Replay.
 
   def __init__(self, game, agentsTypes, agent_index, parameters=None, render=False, use_replay=False,
-         deep=0, monitor=False):
+               deep=0, monitor=False):
 
     # Create an instance of the network itself, as well as the memory.
     # Here is also a good place to set environmental parameters,
@@ -67,13 +67,13 @@ class DQN_Agent():
     self.brp = True
     self.sigma = self.brp_action
 
-    #self.replayRL = IS_Replay_Memory(game, agentsTypes, self.agent_index,
-    #    memory_size=self.RLBufferSize)
+    self.replayRL = IS_Replay_Memory(game, agentsTypes, self.agent_index,
+        memory_size=self.RLBufferSize)
 
-    self.replayRL = Prioritized_Replay_Memory(game, memory_size=self.RLBufferSize)
+    #self.replayRL = Prioritized_Replay_Memory(game, memory_size=self.RLBufferSize)
 
     self.replaySL = Replay_Memory(game, memory_size=self.SLBufferSize,
-        kind=replay.RESERVOIR)
+                                  kind=replay.RESERVOIR)
 
   # q_values: State * Action -> Value
   def brp_action(self, state):
@@ -122,9 +122,11 @@ class DQN_Agent():
       for i in range(self.network_updates):
         batch = self.network_update_period
 
-        replayRLbatch = self.replayRL.sample_batch(self,batch_size=batch)
+        # replayRLbatch = self.replayRL.sample_batch(self,batch_size=batch)
+        replayRLbatch, batch_importance_weights = self.replayRL.sample_batch(batch)
+
         # should use mse loss, just have # action_size results
-        self.valuenet.update_batch(batch, replayRLbatch)
+        self.valuenet.update_batch(batch, replayRLbatch, batch_importance_weights)
 
         if self.replaySL.size >= 1000:
           replaySLbatch = self.replaySL.sample_batch(batch)
