@@ -63,13 +63,13 @@ class IS_Replay_Memory():
 
   # Calculates the probability that opponents of an agent would take the actionset
   # using the current policy networks
-  def opponent_likelihood(self, state, actionset):
+  def opponent_likelihood(self, stateset, actionset):
     agentsTypes = self.agentsTypes
     prob = 1.0
     for i in range(len(actionset)):
       if i != self.agent_index:
         policynet = agentsTypes[i].policynet
-        agent_likelihood = policynet.action_prob(np.array([state[i]]), [actionset[i]])[0]
+        agent_likelihood = policynet.action_prob(np.array([stateset[i]]), [actionset[i]])[0]
         prob *= agent_likelihood
     return prob
 
@@ -80,7 +80,12 @@ class IS_Replay_Memory():
     max_index = min(self.size, self.cap)
     self.sample_prob = self.sample_prob / self.sample_prob.sum()
     batch_indices = np.random.choice(max_index, batch_size, p=self.sample_prob[:max_index])
-    return [self.cache[i] for i in batch_indices]
+    for i in batch_indices:
+      stateset = self.full_state_cache[i]
+      actionset = self.full_action_cache[i]
+      self.cur_likelihood[i] = self.opponent_likelihood(stateset, actionset)
+      self.sample_prob[i] = self.cur_likelihood[i] / self.initial_likelihood[i]
+    return [self.cache[i] for i in batch_indices], [self.sample_prob[i] for i in batch_indices]
 
   def append(self, transition):
     if self.kind == CBUFFER:

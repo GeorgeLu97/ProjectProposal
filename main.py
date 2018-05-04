@@ -119,9 +119,9 @@ class DQN_Agent():
       for i in range(self.network_updates):
         batch = self.network_update_period
 
-        replayRLbatch = self.replayRL.sample_batch(batch)
+        replayRLbatch, batch_importance_weights = self.replayRL.sample_batch(batch)
         # should use mse loss, just have # action_size results
-        self.valuenet.update_batch(batch, replayRLbatch)
+        self.valuenet.update_batch(batch, replayRLbatch, batch_importance_weights)
 
         if self.replaySL.size >= 1000:
           replaySLbatch = self.replaySL.sample_batch(batch)

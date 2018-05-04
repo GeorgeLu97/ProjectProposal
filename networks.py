@@ -1,9 +1,16 @@
-from keras.models import Sequential
-from keras.layers import Dense, LSTM
+import numpy as np
+import keras
 from keras import optimizers
-from keras.engine.topology import Layer
+from keras.layers import Dense
+from keras.models import Sequential
 
-import numpy as np, gym, sys, copy, argparse
+
+def weighted_mse_loss(y_true_wrapper, y_pred):
+  y_true = y_true_wrapper[:, 0:-1]
+  weights = y_true_wrapper[:, -1]
+
+  loss = keras.losses.get('mse')
+  return weights * loss(y_true, y_pred)
 
 class QNetwork():
 
@@ -16,7 +23,6 @@ class QNetwork():
     self.state_size = env.state_size
     self.action_size = env.action_size
 
-
     model = Sequential()
     model.add(Dense(30, activation='relu', input_dim=(self.state_size)))
     #model.add(Dense(30, activation='relu'))
@@ -25,8 +31,8 @@ class QNetwork():
 
     #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
     sgd = optimizers.SGD(lr=self.agent.RLalpha)
-    model.compile(loss='mse',
-            optimizer=sgd,
+    model.compile(loss=weighted_mse_loss,
+            optimizer='sgd',
             metrics=['accuracy'])
 
     model2 = Sequential()
@@ -63,16 +69,13 @@ class QNetwork():
     best_action_value = np.max(next_state_actions, axis=1)
     if terminals is not None:
       best_action_value[terminals] = 0.0
-    return (best_actions, best_action_value)
+    return best_actions, best_action_value
 
   def best_action(self, state):
     actions, action_value = self.best_action_batch(np.array([state]))
-    return (actions[0], action_value[0])
+    return actions[0], action_value[0]
 
-  def update_batch(self, size, experienceList):
-    target_list = []
-    cur_list = []
-
+  def update_batch(self, size, experienceList, weights):
     next_states = np.array([experience[3] for experience in experienceList])
     rewards = np.array([experience[2] for experience in experienceList])
     states = np.array([experience[0] for experience in experienceList])
@@ -85,8 +88,10 @@ class QNetwork():
 
     # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
     cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
+    weights = [[x] for x in weights]
 
-    self.modeltrain.fit(states, cur_targets, batch_size=size, verbose=0)
+    targets_and_weights = np.concatenate((cur_targets, weights), axis=1)
+    self.modeltrain.fit(states, targets_and_weights, batch_size=size, verbose=0)
 
   def update(self, state, action, reward, next_state, is_terminal):
     self.update_batch(1, [[state, action, reward, next_state, is_terminal]])
