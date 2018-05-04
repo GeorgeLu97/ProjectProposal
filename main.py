@@ -1,24 +1,19 @@
 #!/usr/bin/env python
 ### TODO
 
-import matplotlib as mpl
-import keras
-import numpy as np, gym, sys, copy, argparse
-import tensorflow as tf
-
-import random
-import time
-import games
-import rps
-import mediumgames
 import math
+import random
 
-from parameters import parameters_dict
-from networks import PNetwork, QNetwork
+import numpy as np
+import sys
+
 import replay
-from replay import Replay_Memory
-
+import rps
+from networks import PNetwork, QNetwork
+from parameters import parameters_dict
+from replay import Replay_Memory, IS_Replay_Memory
 from utils import *
+
 
 class DQN_Agent():
 
@@ -31,7 +26,7 @@ class DQN_Agent():
   # (4) Create a function to test the Q Network's performance on the environment.
   # (5) Create a function for Experience Replay.
 
-  def __init__(self, game, parameters=None, render=False, use_replay=False,
+  def __init__(self, game, agentsTypes, agent_index, parameters=None, render=False, use_replay=False,
          deep=0, monitor=False):
 
     # Create an instance of the network itself, as well as the memory.
@@ -50,6 +45,8 @@ class DQN_Agent():
 
     self.episodes = 1000000
     self.env = game.env
+    self.agentsTypes = agentsTypes
+    self.agent_index = agent_index
     self.state_size = self.env.state_size
     self.action_size = self.env.action_size
     self.eta = 0.1
@@ -70,10 +67,10 @@ class DQN_Agent():
     self.brp = True
     self.sigma = self.brp_action
 
-    self.replayRL = Replay_Memory(game, memory_size=self.RLBufferSize,
-       kind=replay.CBUFFER)
+    self.replayRL = IS_Replay_Memory(game, agentsTypes, self.agent_index,
+        memory_size=self.RLBufferSize)
     self.replaySL = Replay_Memory(game, memory_size=self.SLBufferSize,
-       kind=replay.RESERVOIR)
+        kind=replay.RESERVOIR)
 
   # q_values: State * Action -> Value
   def brp_action(self, state):
@@ -101,16 +98,22 @@ class DQN_Agent():
     action = self.sigma(state)
     return action
 
-  def updatereplay(self, state, action, reward, next_state, done):
+  def updatereplay(self, state, action, reward, next_state, done, actionset, stateset):
     # See paper for recommended epsilon decay
     self.epsilon = self.epsilon_initial / math.ceil(math.sqrt((self.iteration + 1)  / 10000))
 
     self.iteration += 1
-    self.replayRL.append([state, action, reward, next_state, done])
     if self.brp:
       action_onehot = [0 for _ in range(self.action_size)]
       action_onehot[action] = 1
       self.replaySL.append([state, action_onehot])
+    else:
+      # If we are using Importance Sampling Experience Replay,
+      # the last two fields are the likelihood at the time the item was added
+      # and the current opponent likelihood
+
+      # These fields should be ignored for Normal Exp Replay
+      self.replayRL.append([state, action, reward, next_state, done, actionset, stateset])
 
     if self.iteration % self.network_update_period == 0:
       for i in range(self.network_updates):
@@ -128,8 +131,8 @@ class DQN_Agent():
     if self.iteration % self.target_update_period == 0:
       self.valuenet.update_target()
 
-  def appendreplay(self, state, action, reward, next_state, done):
-    self.replayRL.append([state, action, reward, next_state, done])
+  def appendreplay(self, state, action, reward, next_state, done, actionset, stateset):
+    self.replayRL.append([state, action, reward, next_state, done, actionset, stateset])
 
   # Not Essential
   def surveySLMemory(self):
@@ -159,8 +162,7 @@ class RandomAgent():
 
 class DQN_Game():
 
-  def __init__(self, environment_name, render=False, use_replay=False,
-         deep=0, monitor=False):
+  def __init__(self, environment_name, render=False, use_replay=False):
 
     self.env = rps.RPS() # current environment
 
@@ -172,8 +174,11 @@ class DQN_Game():
     self.parameters = parameters_dict[environment_name]
 
     # For now I'm enforcing one agent per agentType. Maybe this can change in the future
-    self.agentsTypes = [DQN_Agent(self, parameters=self.parameters)
-        for _ in range(len(self.agents))]
+    # Very hacky stuff
+    self.agentsTypes = [None for _ in range(self.num_agents)]
+
+    for i in range(self.num_agents):
+      self.agentsTypes[i] = DQN_Agent(self, self.agentsTypes, i, parameters=self.parameters)
     self.num_agent_types = len(self.agentsTypes)
 
     self.render = render
@@ -209,8 +214,8 @@ class DQN_Game():
 
         for i in range(self.num_agent_types):
           self.agentsTypes[i].updatereplay(cur_state[i], actionset[i],
-             rewards[i], next_state[i], is_terminal)
-          
+             rewards[i], next_state[i], is_terminal, actionset, cur_state)
+
         cur_state = next_state
         if is_terminal:
           break
@@ -298,13 +303,13 @@ class DQN_Game():
       actionset = [self.agentsTypes[i].act(cur_state[i]) for i in range(len(self.agents))]
       next_state, rewards, is_terminal = self.env.step(actionset)
 
-      [self.agentsTypes[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
-       for i in range(len(self.agents))]
+      for i in range(self.num_agent_types):
+        self.agentsTypes[i].appendreplay(cur_state[i], actionset[i], rewards[i],
+            next_state[i], is_terminal, actionset, cur_state)
 
       cur_state = next_state
       if is_terminal:
         cur_state = self.env.reset()
-
 
 '''
 def parse_arguments():
@@ -325,7 +330,7 @@ def main(args):
   # environment_name = args.env
 
   game = DQN_Game('rps')
-  game.train(500000)
+  game.train(1000000)
 
 
 if __name__ == '__main__':

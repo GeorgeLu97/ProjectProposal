@@ -59,8 +59,6 @@ class QNetwork():
   # return best_action_value : (num_inputs, )
   def best_action_batch(self, states, terminals=None):
     next_state_actions = self.predict(states)
-    #if random.random() < 0.001:
-    #  print(next_state_actions)
     best_actions = np.argmax(next_state_actions, axis=1)
     best_action_value = np.max(next_state_actions, axis=1)
     if terminals is not None:
@@ -141,6 +139,10 @@ class PNetwork():
   # return : np.array (num_inputs, num_actions)
   def predict(self, states):
     return self.model.predict(states)
+
+  def action_prob(self, states, actions):
+    all_action_probs = self.model.predict(states)
+    return all_action_probs[np.arange(len(all_action_probs)), actions]
 
   # states : np.array (num_inputs, num_dims)
   # return best_action : (num_inputs, )

@@ -14,16 +14,7 @@ class Replay_Memory():
     self.cap = memory_size
     self.kind = kind
 
-    # The memory essentially stores transitions recorder from the agent
-    # taking actions in the environment.
-    # Burn in episodes define the number of episodes that are written into the memory from the
-    # randomly initialized agent. Memory size is the maximum size after which old elements in the memory are replaced.
-    # A simple (if not the most efficient) was to implement the memory is as a list of transitions.
-
-
   def sample_batch(self, batch_size=32):
-    # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
-    # You will feed this to your model to train.
     return random.sample(self.cache[:min(self.size, self.cap)], batch_size)
 
   def append(self, transition):
@@ -45,8 +36,64 @@ class Replay_Memory():
           self.size += 1
 
 # TODO (David): Implement importance sampling replay memory
+# Idea - We can do importance sampling replay for memory in the RL Memory since
+# it should be a good approximation of policy net anyway
+# CBUFFER only for now
+
 class IS_Replay_Memory():
-  pass
+  def __init__(self, game, agentsTypes, agent_index, memory_size=100000, burn_in=1000):
+
+    self.cache = [None for _ in range(memory_size)]
+    self.full_state_cache = [None for _ in range(memory_size)]
+    self.full_action_cache = [None for _ in range(memory_size)]
+    self.initial_likelihood = [0.0 for _ in range(memory_size)]
+    self.cur_likelihood = [0.0 for _ in range(memory_size)]
+
+    self.sample_prob = np.array([0.0 for _ in range(memory_size)])
+
+    self.size = 0
+    self.new = 0
+    self.burn_in = burn_in
+    self.cap = memory_size
+    self.kind = CBUFFER
+
+    self.agent_index = agent_index
+    self.agentsTypes = agentsTypes
+
+
+  # Calculates the probability that opponents of an agent would take the actionset
+  # using the current policy networks
+  def opponent_likelihood(self, state, actionset):
+    agentsTypes = self.agentsTypes
+    prob = 1.0
+    for i in range(len(actionset)):
+      if i != self.agent_index:
+        policynet = agentsTypes[i].policynet
+        agent_likelihood = policynet.action_prob(np.array([state[i]]), [actionset[i]])[0]
+        prob *= agent_likelihood
+    return prob
+
+  def sample_batch(self, batch_size=32):
+    # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
+    # You will feed this to your model to train.
+
+    max_index = min(self.size, self.cap)
+    self.sample_prob = self.sample_prob / self.sample_prob.sum()
+    batch_indices = np.random.choice(max_index, batch_size, p=self.sample_prob[:max_index])
+    return [self.cache[i] for i in batch_indices]
+
+  def append(self, transition):
+    if self.kind == CBUFFER:
+      # Use circular buffer sampling
+      self.cache[self.new] = transition
+      self.full_action_cache[self.new] = transition[-2]
+      self.full_state_cache[self.new] = transition[-1]
+      self.initial_likelihood[self.new] = self.opponent_likelihood(transition[-1], transition[-2])
+      self.cur_likelihood[self.new] = self.initial_likelihood[self.new]
+      self.sample_prob[self.new] = self.initial_likelihood[self.new] / self.cur_likelihood[self.new]
+
+      self.size = min(self.size + 1, self.cap)
+      self.new = (self.new + 1) % self.cap
 
 class Prioritized_Replay_Memory():
 
@@ -59,12 +106,6 @@ class Prioritized_Replay_Memory():
     self.kind = kind
     self.max_priority = 1
     self.weights = [0 for i in range(memory_size)]
-
-    # The memory essentially stores transitions recorder from the agent
-    # taking actions in the environment.
-    # Burn in episodes define the number of episodes that are written into the memory from the
-    # randomly initialized agent. Memory size is the maximum size after which old elements in the memory are replaced.
-    # A simple (if not the most efficient) was to implement the memory is as a list of transitions.
 
   def sample_batch(self, agent, batch_size=32):
     # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.

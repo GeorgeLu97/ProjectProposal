@@ -10,4 +10,4 @@ rps_parameters = {
   'SLBufferSize': 50000
 }
 
-parameters_dict['rps'] =rps_parameters
+parameters_dict['rps'] = rps_parameters
