@@ -105,20 +105,23 @@ class Prioritized_Replay_Memory():
     self.cap = memory_size
     self.kind = kind
     self.max_priority = 1
+    self.gamma = 1
     self.weights = [0 for i in range(memory_size)]
+    for i in range(burn_in):
+        self.weights[i] = 1
 
   def sample_batch(self, agent, batch_size=32):
-    # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
-    # You will feed this to your model to train.
-    # print(np.random.choice(self.cache, batch_size, p=self.weights (but normalized)))
-    true_weights = self.weights / np.sum(self.weights)
-    indices = np.random.choice(list(range(min(self.size, self.cap))), batch_size, p=true_weights)
-    # need to update weights/priority here too
-    for i in indices:
-      [state, action, reward, next_state, done] = self.cache[i]
-      self.weights[i] = abs(reward + self.agent.gamma * np.max(agent.QNetwork.model.predict([next_state])[0]) - agent.QNetwork.model.predict([state])[0][action])
+      # This function returns a batch of randomly sampled transitions - i.e. state, action, reward, next state, terminal flag tuples.
+      # You will feed this to your model to train.
+      # print(np.random.choice(self.cache, batch_size, p=self.weights (but normalized)))
+      true_weights = self.weights / np.sum(self.weights)
+      indices = np.random.choice(list(range(self.cap)), batch_size, p=true_weights)
+      # need to update weights/priority here too
+      for i in indices:
+          [state, action, reward, next_state, done, actionset, stateset] = self.cache[i]
+          self.weights[i] = abs(reward + agent.gamma * np.max(agent.valuenet.modeltarget.predict(np.array([next_state]))[0]) - agent.valuenet.modeltarget.predict(np.array([state]))[0][action])
 
-    return random.sample(self.cache[:min(self.size, self.cap)], batch_size)
+      return random.sample(self.cache[:min(self.size, self.cap)], batch_size)
 
   def append(self, transition):
     if self.kind == CBUFFER:
@@ -137,7 +140,7 @@ class Prioritized_Replay_Memory():
         if random.random() * self.size < self.cap:
           ind = random.randint(0, self.cap - 1)
           self.cache[ind] = transition
-          self.weights[ind] = self.mex_priority
+          self.weights[ind] = self.max_priority
           self.size += 1
         else:
           self.size += 1

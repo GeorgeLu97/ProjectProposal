@@ -11,7 +11,7 @@ import replay
 import rps
 from networks import PNetwork, QNetwork
 from parameters import parameters_dict
-from replay import Replay_Memory, IS_Replay_Memory
+from replay import Replay_Memory, IS_Replay_Memory, Prioritized_Replay_Memory
 from utils import *
 
 
@@ -67,8 +67,11 @@ class DQN_Agent():
     self.brp = True
     self.sigma = self.brp_action
 
-    self.replayRL = IS_Replay_Memory(game, agentsTypes, self.agent_index,
-        memory_size=self.RLBufferSize)
+    #self.replayRL = IS_Replay_Memory(game, agentsTypes, self.agent_index,
+    #    memory_size=self.RLBufferSize)
+
+    self.replayRL = Prioritized_Replay_Memory(game, memory_size=self.RLBufferSize)
+
     self.replaySL = Replay_Memory(game, memory_size=self.SLBufferSize,
         kind=replay.RESERVOIR)
 
@@ -119,7 +122,7 @@ class DQN_Agent():
       for i in range(self.network_updates):
         batch = self.network_update_period
 
-        replayRLbatch = self.replayRL.sample_batch(batch)
+        replayRLbatch = self.replayRL.sample_batch(self,batch_size=batch)
         # should use mse loss, just have # action_size results
         self.valuenet.update_batch(batch, replayRLbatch)
 
