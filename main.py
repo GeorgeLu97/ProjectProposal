@@ -167,10 +167,14 @@ class DQN_Game():
     self.action_size = self.env.action_size
 
     self.agents = [i for i in range(self.env.player_count)]
+    self.num_agents = len(self.agents)
 
     self.parameters = parameters_dict[environment_name]
+
+    # For now I'm enforcing one agent per agentType. Maybe this can change in the future
     self.agentsTypes = [DQN_Agent(self, parameters=self.parameters)
-        for i in range(self.env.num_teams)]
+        for _ in range(len(self.agents))]
+    self.num_agent_types = len(self.agentsTypes)
 
     self.render = render
     self.use_replay = use_replay
@@ -187,7 +191,7 @@ class DQN_Game():
     run_test = False
 
     iteration = 0
-    freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
+    freqs = [[0 for _ in range(self.action_size)] for _ in range(self.num_agent_types)]
     for episode in range(episodes):
       [i.resetepisode() for i in self.agentsTypes]
       cur_state = self.env.reset()
@@ -197,14 +201,14 @@ class DQN_Game():
         if iteration % 5000 == 0:
           run_test = True
 
-        actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
+        actionset = [self.agentsTypes[i].act(cur_state[i]) for i in range(len(self.agents))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        for j in range(self.env.num_teams):
-          if self.agentsTypes[j].brp:
-            freqs[j][actionset[j]] += 1
+        for i in range(self.num_agent_types):
+          if self.agentsTypes[i].brp:
+            freqs[i][actionset[i]] += 1
 
-        for i in range(len(self.agents)):
-          self.agentsTypes[self.env.team[i]].updatereplay(cur_state[i], actionset[i],
+        for i in range(self.num_agent_types):
+          self.agentsTypes[i].updatereplay(cur_state[i], actionset[i],
              rewards[i], next_state[i], is_terminal)
           
         cur_state = next_state
@@ -213,7 +217,7 @@ class DQN_Game():
 
       if run_test:
         print(freqs)
-        freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
+        freqs = [[0 for _ in range(self.action_size)] for _ in range(self.num_agent_types)]
 
         exploitabilities.append(self.check_exploitability())
         avg_score_differential, avg_team_scores = self.test()
@@ -247,31 +251,33 @@ class DQN_Game():
     total_ai_reward = 0
     ai_role_reward = [0 for _ in range(self.env.num_teams)]
     ai_role_count = [0 for _ in range(self.env.num_teams)]
-    freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
+    freqs = [[0 for _ in range(self.action_size)] for _ in range(self.num_agent_types)]
 
     for episode in range(NUM_TEST_ITERS):
       cur_state = self.env.reset()
       [i.resetepisode(average_only=True) for i in self.agentsTypes]
+
       team_list = self.env.team
       random_ai = random.randint(0, self.env.num_teams - 1)
+
       agent_list = [None for _ in range(len(self.agents))]
 
       for i in range(len(self.agents)):
         if team_list[i] == random_ai:
           agent_list[i] = RandomAgent(self.env)
         else:
-          agent_list[i] = self.agentsTypes[team_list[i]]
+          agent_list[i] = self.agentsTypes[i]
 
       while True:
         actionset = [agent_list[i].act(cur_state[i]) for i in range(len(agent_list))]
         next_state, rewards, is_terminal = self.env.step(actionset)
-        for j in range(self.env.num_teams):
-          if team_list[j] != random_ai:
-            freqs[j][actionset[j]] += 1
+        for i in range(self.num_agent_types):
+          if team_list[i] != random_ai:
+            freqs[i][actionset[i]] += 1
 
         cur_state = next_state
         if is_terminal:
-          for i in range(len(self.agents)):
+          for i in range(self.num_agents):
             # If this agent is not controlled by the random ai
             if team_list[i] != random_ai:
               total_ai_reward += rewards[i]
@@ -280,9 +286,7 @@ class DQN_Game():
               break
           break
     print(freqs)
-    ai_average_reward = [(ai_role_reward[i] / ai_role_count[i]) for i in range(self.env.num_teams)]
-    #for x in ai_average_reward:
-    #  print(x)
+    ai_average_reward = [(ai_role_reward[i] / ai_role_count[i]) for i in range(self.num_agent_types)]
 
     return total_ai_reward / NUM_TEST_ITERS, ai_average_reward
 
@@ -291,27 +295,15 @@ class DQN_Game():
     cur_state = self.env.reset()
     # Initialize your replay memory with a burn_in number of episodes / transitions.
     for _ in range(0, bns):
-      actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
+      actionset = [self.agentsTypes[i].act(cur_state[i]) for i in range(len(self.agents))]
       next_state, rewards, is_terminal = self.env.step(actionset)
 
-      [self.agentsTypes[self.env.team[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
+      [self.agentsTypes[i].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
        for i in range(len(self.agents))]
 
       cur_state = next_state
       if is_terminal:
         cur_state = self.env.reset()
-
-    # need to episode to finish or else monitor complains
-    while True:
-      actionset = [self.agentsTypes[self.env.team[i]].act(cur_state[i]) for i in range(len(self.agents))]
-      next_state, rewards, is_terminal = self.env.step(actionset)
-
-      [self.agentsTypes[self.env.team[i]].appendreplay(cur_state[i], actionset[i], rewards[i], next_state[i], is_terminal)
-       for i in range(len(self.agents))]
-
-      cur_state = next_state
-      if is_terminal:
-        break
 
 
 '''

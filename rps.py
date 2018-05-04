@@ -50,7 +50,7 @@ class RPS():
   # Optimal exploit strategy is always a single action
   def compute_exploitability(self, team, pnetwork):
     action_probs = pnetwork.predict(np.array([[0]]))[0]
-    print(action_probs)
+    # print(action_probs)
     max_exploitability = -100.0
     for action_taken in range(3):
       value = (self.rps_rewards[team][action_taken] * action_probs[(action_taken + 2) % 3]
