@@ -68,9 +68,7 @@ class DQN_Agent():
     self.iteration = 0
 
     self.brp = True
-    self.sigma = self.epsilon_greedy_policy
-
-  def init_replay(self, game):
+    self.sigma = self.brp_action
 
     self.replayRL = Replay_Memory(game, memory_size=self.RLBufferSize,
        kind=replay.CBUFFER)
@@ -78,7 +76,7 @@ class DQN_Agent():
        kind=replay.RESERVOIR)
 
   # q_values: State * Action -> Value
-  def epsilon_greedy_policy(self, state):
+  def brp_action(self, state):
     if random.random() < self.epsilon:
       action = random.randint(0, self.action_size - 1)
       return action
@@ -87,25 +85,17 @@ class DQN_Agent():
       return best_action
 
   # greedy policy
-  def greedy_policy(self, state):
+  def average_policy_action(self, state):
     best_action = self.policynet.best_action(state)
     return best_action
 
-  def resetepisode(self, testing=False):
-    if testing:
-      self.brp = False
-      self.sigma = self.greedy_policy
+  def resetepisode(self, average_only=False):
+    if not average_only and random.random() < self.eta:
+      self.brp = True
+      self.sigma = self.brp_action
     else:
-      if random.random() < self.eta:
-        self.brp = True
-        self.sigma = self.epsilon_greedy_policy
-      else:
-        self.brp = False
-        self.sigma = self.greedy_policy
-
-  def act(self):
-    action = self.sigma(self.state)
-    return action
+      self.brp = False
+      self.sigma = self.average_policy_action
 
   def act(self, state):
     action = self.sigma(state)
@@ -116,7 +106,6 @@ class DQN_Agent():
     self.epsilon = self.epsilon_initial / math.ceil(math.sqrt((self.iteration + 1)  / 10000))
 
     self.iteration += 1
-    self.state = next_state
     self.replayRL.append([state, action, reward, next_state, done])
     if self.brp:
       action_onehot = [0 for _ in range(self.action_size)]
@@ -142,6 +131,7 @@ class DQN_Agent():
   def appendreplay(self, state, action, reward, next_state, done):
     self.replayRL.append([state, action, reward, next_state, done])
 
+  # Not Essential
   def surveySLMemory(self):
     freqs = [0 for i in range(self.action_size)]
     for item in self.replaySL.cache[:self.replaySL.size]:
@@ -151,6 +141,7 @@ class DQN_Agent():
 
     print(freqs)
 
+  # Not Essential
   def surveyRLMemory(self):
     for item in self.replayRL.cache[:self.replayRL.size]:
       print(item)
@@ -175,8 +166,6 @@ class DQN_Game():
 
     self.action_size = self.env.action_size
 
-    #self.agents = [DQN_Agent(self) for i in range(self.env.player_count)]
-
     self.agents = [i for i in range(self.env.player_count)]
 
     self.parameters = parameters_dict[environment_name]
@@ -185,8 +174,6 @@ class DQN_Game():
 
     self.render = render
     self.use_replay = use_replay
-    # [i.init_replay(self) for i in self.agents]
-    [i.init_replay(self) for i in self.agentsTypes]
 
     # Burns in memory for all agents
     self.burn_in_memory(self.agentsTypes[0].replayRL.burn_in)
@@ -198,8 +185,6 @@ class DQN_Game():
     testing_team_rewards = []
     exploitabilities = []
     run_test = False
-
-    cur_state = self.env.reset()
 
     iteration = 0
     freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
@@ -260,13 +245,13 @@ class DQN_Game():
     NUM_TEST_ITERS = 1000
 
     total_ai_reward = 0
-    ai_role_reward = [0 for i in range(self.env.num_teams)]
-    ai_role_count = [0 for i in range(self.env.num_teams)]
+    ai_role_reward = [0 for _ in range(self.env.num_teams)]
+    ai_role_count = [0 for _ in range(self.env.num_teams)]
     freqs = [[0 for _ in range(self.action_size)] for _ in range(self.env.num_teams)]
 
     for episode in range(NUM_TEST_ITERS):
       cur_state = self.env.reset()
-      [i.resetepisode(testing=True) for i in self.agentsTypes]
+      [i.resetepisode(average_only=True) for i in self.agentsTypes]
       team_list = self.env.team
       random_ai = random.randint(0, self.env.num_teams - 1)
       agent_list = [None for _ in range(len(self.agents))]
@@ -299,7 +284,7 @@ class DQN_Game():
     #for x in ai_average_reward:
     #  print(x)
 
-    return (total_ai_reward / NUM_TEST_ITERS, ai_average_reward)
+    return total_ai_reward / NUM_TEST_ITERS, ai_average_reward
 
 
   def burn_in_memory(self, bns):
@@ -343,11 +328,9 @@ def parse_arguments():
 '''
 
 def main(args):
-  '''
-  args = parse_arguments()
-  environment_name = args.env
-  '''
 
+  # args = parse_arguments()
+  # environment_name = args.env
 
   game = DQN_Game('rps')
   game.train(500000)
