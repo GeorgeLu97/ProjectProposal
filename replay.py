@@ -60,17 +60,21 @@ class IS_Replay_Memory():
     self.agent_index = agent_index
     self.agentsTypes = agentsTypes
 
+    self.num_agent_types = len(self.agentsTypes)
 
   # Calculates the probability that opponents of an agent would take the actionset
   # using the current policy networks
-  def opponent_likelihood(self, stateset, actionset):
+  def opponent_likelihood(self, stateset_batch, actionset_batch):
+    self.batch_size = len(stateset_batch)
     agentsTypes = self.agentsTypes
-    prob = 1.0
-    for i in range(len(actionset)):
+    prob = np.array([1.0 for _ in range(self.batch_size)])
+    for i in range(self.num_agent_types):
       if i != self.agent_index:
         policynet = agentsTypes[i].policynet
-        agent_likelihood = policynet.action_prob(np.array([stateset[i]]), [actionset[i]])[0]
-        prob *= agent_likelihood
+        agent_states = [stateset_batch[j][i] for j in range(self.batch_size)]
+        agent_actions = [actionset_batch[j][i] for j in range(self.batch_size)]
+        agent_likelihood = policynet.action_prob(np.array(agent_states), np.array(agent_actions))
+        prob = prob * agent_likelihood
     return prob
 
   def sample_batch(self, batch_size=32):
@@ -80,11 +84,13 @@ class IS_Replay_Memory():
     max_index = min(self.size, self.cap)
     self.sample_prob = self.sample_prob / self.sample_prob.sum()
     batch_indices = np.random.choice(max_index, batch_size, p=self.sample_prob[:max_index])
-    for i in batch_indices:
-      stateset = self.full_state_cache[i]
-      actionset = self.full_action_cache[i]
-      self.cur_likelihood[i] = self.opponent_likelihood(stateset, actionset)
-      self.sample_prob[i] = self.cur_likelihood[i] / self.initial_likelihood[i]
+    stateset_batch = [self.full_state_cache[i] for i in batch_indices]
+    actionset_batch = [self.full_action_cache[i] for i in batch_indices]
+    likelihood_batch = self.opponent_likelihood(stateset_batch, actionset_batch)
+    for i in range(len(batch_indices)):
+      cache_index = batch_indices[i]
+      self.cur_likelihood[cache_index] = likelihood_batch[i]
+      self.sample_prob[cache_index] = self.cur_likelihood[cache_index] / self.initial_likelihood[cache_index]
     return [self.cache[i] for i in batch_indices], [self.sample_prob[i] for i in batch_indices]
 
   def append(self, transition):
@@ -93,7 +99,7 @@ class IS_Replay_Memory():
       self.cache[self.new] = transition
       self.full_action_cache[self.new] = transition[-2]
       self.full_state_cache[self.new] = transition[-1]
-      self.initial_likelihood[self.new] = self.opponent_likelihood(transition[-1], transition[-2])
+      self.initial_likelihood[self.new] = self.opponent_likelihood([transition[-1]], [transition[-2]])[0]
       self.cur_likelihood[self.new] = self.initial_likelihood[self.new]
       self.sample_prob[self.new] = self.initial_likelihood[self.new] / self.cur_likelihood[self.new]
 

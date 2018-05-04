@@ -88,9 +88,10 @@ class QNetwork():
 
     # Basically sets cur_targets[actions[i]] = new_targets[i] for each i
     cur_targets[np.arange(cur_targets.shape[0]), actions] = new_targets
-    weights = [[x] for x in weights]
 
+    weights = [[x] for x in weights]
     targets_and_weights = np.concatenate((cur_targets, weights), axis=1)
+
     self.modeltrain.fit(states, targets_and_weights, batch_size=size, verbose=0)
 
   def update(self, state, action, reward, next_state, is_terminal):
