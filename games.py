@@ -356,3 +356,120 @@ class SimpleMafia():
     self.round_num = 0
 
     return [self.get_state(i) for i in range(self.player_count)]
+
+
+class MultiLeduc():
+  # Action 5 means abstain
+  ABSTAIN = 5
+
+  ROUND_LIMIT = 20
+
+  FOLD = 0
+  CHECK = 1
+  RAISE = 2
+
+  def __init__(self):
+    self.player_count = 5
+    self.num_teams = 5
+    self.team = None  # Will be filled in by game
+
+    self.suits = 3
+    self.ranks = 5
+    self.ante = 1
+    self.bet_size = 5
+    self.max_raises = 3
+
+    self.offset = 0
+
+    self.deck = np.ndarray.flatten([[i] * self.suits for i in range(self.ranks)])
+
+    # Keep these up to date
+    '''
+    limit 3 bets per round
+    rounds(2) * other player actions so far(3 * playerct) * possible action(3)
+    + selfcard(suits * cards) + showcard(suits * cards)
+    '''
+    self.state_size = 2 * (self.max_raises + 1) * self.player_count * 3 + self.ranks * 2
+    self.action_size = 3 #fold,check,raise
+
+    # Initialize the first game
+    self.reset()
+
+    # We will save some info about past games here
+    # We might query this to see how well our agents are learning
+    self.metrics = []
+
+  #reward might not be known till after your turn
+  def step(self, action):
+    self.turn_num += 1
+    self.history[action][self.turn_num][self.round_num] = 1
+    if(action == 0): #fold
+        del self.in_player_ind[self.cur_player_ind]
+        if len(self.in_player_ind) == 1:
+            return self.perm[self.in_player_ind[0]], True
+        elif len(self.in_player_ind) == self.cur_player_ind:
+            self.cur_player_ind = 0
+    elif(action == 1): #check
+        pass
+    elif(action == 2): #raise
+        pass
+
+    self.cur_player_ind = (self.cur_player_ind + 1) % self.in_player_ind
+    next_player = self.perm[self.in_player_ind[self.cur_player_ind]]
+    return next_player, False
+
+  def getstate(self, agent):
+      agentind = self.invperm[agent]
+      indarray = [0] * self.ranks
+      indarray[self.playercards[agentind]] = 1
+      return np.append(np.array.flatten(self.history), indarray, self.riverarray)
+
+  def value(self, card):
+      if card == self.river:
+          return self.ranks
+      else:
+          return card
+
+  def getreward(self):
+      winners = []
+      winval = -1
+      for i in range(self.in_player_ind):
+          cv = self.value(self.playercards[i])
+          if(cv > winval):
+              winners = [self.perm[i]]
+          elif cv == winval:
+              winners.append(self.perm[i])
+      totalreward = np.sum(self.player_bets)
+      winnerreward = totalreward / len(winners)
+      rewards = [0]
+      for i in range(self.player_count):
+          winnerreward[self.perm[i]] = -self.player_bets[i]
+      for i in winners:
+          winnerreward[self.perm[i]] += winnerreward
+
+  def reset(self, save_metrics=False):
+    # Stop after some number of rounds
+    self.raises = 0
+    self.round_num = 0
+    self.turn_num = 0
+
+    np.random.shuffle(self.deck)
+
+    self.perm = np.random.permutation(self.player_count)
+    self.invperm = [0] * self.player_count
+    for i in range(len(self.perm)):
+        self.invperm[self.perm[i]] = i
+
+    self.last_raise = 0
+    self.cur_player_ind = 0
+    self.in_player_ind = [i for i in range(self.player_count)]
+    self.player_bets = [self.ante for i in range(self.player_count)]
+
+    #deal
+    self.playercards = [self.deck[i] for i in range(self.player_count)]
+    self.river = self.deck[self.player_count]
+    self.riverarray = [0] * self.ranks
+    self.riverarray[self.river] = 1
+    self.history = np.array([[[[0] * 2] * (self.max_raises + 1) * self.player_count] * 3])
+
+    return [self.get_state(i) for i in range(self.player_count)]
