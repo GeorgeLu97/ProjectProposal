@@ -82,8 +82,7 @@ class IS_Replay_Memory():
     # You will feed this to your model to train.
 
     max_index = min(self.size, self.cap)
-    self.sample_prob = self.sample_prob / self.sample_prob.sum()
-    batch_indices = np.random.choice(max_index, batch_size, p=self.sample_prob[:max_index])
+    batch_indices = np.random.choice(max_index, batch_size)
     stateset_batch = [self.full_state_cache[i] for i in batch_indices]
     actionset_batch = [self.full_action_cache[i] for i in batch_indices]
     likelihood_batch = self.opponent_likelihood(stateset_batch, actionset_batch)
