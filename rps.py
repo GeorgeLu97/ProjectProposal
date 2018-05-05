@@ -62,8 +62,9 @@ class RPS():
 
   def reset(self, save_metrics=False):
     self.team = [0, 1]
-    random_rewards = [random.random() + 0.5 for _ in range(3)]
-    self.rps_rewards = [self.random_rewards, self.random_rewards]
+    # random_rewards = [random.random() + 0.5 for _ in range(3)]
+    random_rewards = [0.5, 1, 2]
+    self.rps_rewards = [random_rewards, random_rewards]
 
     self.game_state = 0
 
