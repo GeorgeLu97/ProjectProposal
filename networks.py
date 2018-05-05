@@ -32,7 +32,7 @@ class QNetwork():
     #adam = optimizers.Adam(lr=self.agent.alpha, decay=1e-6)
     sgd = optimizers.SGD(lr=self.agent.RLalpha)
     model.compile(loss=weighted_mse_loss,
-            optimizer='sgd',
+            optimizer=sgd,
             metrics=['accuracy'])
 
     model2 = Sequential()

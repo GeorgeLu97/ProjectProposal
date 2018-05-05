@@ -1,4 +1,5 @@
 import numpy as np
+import random
 
 class RPS():
   def __init__(self):
@@ -60,8 +61,9 @@ class RPS():
     return max_exploitability
 
   def reset(self, save_metrics=False):
-    self.team = [0, 1] 
-    self.rps_rewards = [[0.5, 1, 2], [0.5, 1, 2]]
+    self.team = [0, 1]
+    random_rewards = [random.random() + 0.5 for _ in range(3)]
+    self.rps_rewards = [self.random_rewards, self.random_rewards]
 
     self.game_state = 0
 
